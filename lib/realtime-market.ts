@@ -46,14 +46,17 @@ export type ChartDataPoint = {
     volume?: number;
 };
 
+export type ChartPeriod = '1d' | '5d' | '1m' | '3m' | '1y' | '5y';
+
 export type ChartSeries = {
     symbol: string;
     market: MarketType;
-    period: '1d' | '1m' | '3m' | '1y' | '5y';
+    period: ChartPeriod;
     points: ChartDataPoint[];
     periodHigh: number;
     periodLow: number;
     latestPrice: number;
+    prevClose?: number;
     change: number;
     changePercent: number;
     currency: string;
@@ -344,22 +347,88 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
  */
 export async function fetchUnifiedChartSeries(
     rawSymbol: string,
-    period: '1d' | '1m' | '3m' | '1y' | '5y' = '1d',
+    period: ChartPeriod = '1d',
 ): Promise<ChartSeries | null> {
     const meta = identifyMarketAndCode(rawSymbol);
 
     try {
-        // --- 1. A-Shares & HK Stocks ---
+        // --- 1. US Equities (Yahoo Finance Real-Time 1-min & Historical) ---
+        if (meta.market === 'us') {
+            const range = period === '1d' ? '1d' : period === '5d' ? '5d' : period === '1m' ? '1mo' : period === '3m' ? '3mo' : period === '1y' ? '1y' : '5y';
+            const interval = period === '1d' ? '1m' : period === '5d' ? '5m' : period === '1y' ? '1wk' : period === '5y' ? '1mo' : '1d';
+            const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${meta.normalizedSymbol}?range=${range}&interval=${interval}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: period === '1d' || period === '5d' ? 30 : 3600 },
+            });
+            if (res.ok) {
+                const json = await res.json();
+                const result = json?.chart?.result?.[0];
+                const timestamps: number[] = result?.timestamp || [];
+                const quoteObj = result?.indicators?.quote?.[0];
+                const closes: (number | null)[] = quoteObj?.close || [];
+                const opens: (number | null)[] = quoteObj?.open || [];
+                const highs: (number | null)[] = quoteObj?.high || [];
+                const lows: (number | null)[] = quoteObj?.low || [];
+                const metaData = result?.meta;
+                const prevClose = metaData?.chartPreviousClose || metaData?.previousClose;
+
+                const points: ChartDataPoint[] = [];
+                for (let i = 0; i < timestamps.length; i++) {
+                    const close = closes[i];
+                    if (close == null || !Number.isFinite(close)) continue;
+                    const d = new Date(timestamps[i] * 1000);
+                    const timeStr = (period === '1d' || period === '5d')
+                        ? d.toLocaleTimeString('zh-CN', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
+                        : d.toISOString().split('T')[0];
+                    const dateStr = d.toISOString().split('T')[0];
+                    points.push({
+                        time: timeStr,
+                        date: dateStr,
+                        close: Number(close.toFixed(2)),
+                        open: opens[i] ? Number(opens[i]!.toFixed(2)) : undefined,
+                        high: highs[i] ? Number(highs[i]!.toFixed(2)) : undefined,
+                        low: lows[i] ? Number(lows[i]!.toFixed(2)) : undefined,
+                    });
+                }
+
+                if (points.length > 0) {
+                    const validCloses = points.map((p) => p.close);
+                    const periodHigh = Math.max(...validCloses);
+                    const periodLow = Math.min(...validCloses);
+                    const basePrice = prevClose || points[0].close;
+                    const latestPrice = points[points.length - 1].close;
+                    const change = latestPrice - basePrice;
+                    const changePercent = basePrice ? (change / basePrice) * 100 : 0;
+
+                    return {
+                        symbol: meta.normalizedSymbol,
+                        market: 'us',
+                        period,
+                        points,
+                        periodHigh,
+                        periodLow,
+                        latestPrice,
+                        prevClose,
+                        change: Number(change.toFixed(2)),
+                        changePercent: Number(changePercent.toFixed(2)),
+                        currency: metaData?.currency || 'USD',
+                    };
+                }
+            }
+        }
+
+        // --- 2. A-Shares & HK Stocks ---
         if (meta.market === 'cn' || meta.market === 'hk') {
+            const queryCode = meta.market === 'hk' ? meta.tencentCode!.replace(/^r_/, '') : meta.tencentCode;
             if (period === '1d') {
                 // Fetch Tencent 1-day minute series
-                const res = await fetch(`https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${meta.tencentCode}`, {
+                const res = await fetch(`https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${queryCode}`, {
                     headers: { 'User-Agent': 'Mozilla/5.0' },
                     next: { revalidate: 30 },
                 });
                 if (!res.ok) return null;
                 const json = await res.json();
-                const rawList: string[] = json?.data?.[meta.tencentCode!]?.data?.data || [];
+                const rawList: string[] = json?.data?.[queryCode!]?.data?.data || [];
                 if (!rawList.length) return null;
 
                 const points: ChartDataPoint[] = [];
@@ -396,11 +465,11 @@ export async function fetchUnifiedChartSeries(
                 };
             } else {
                 // Multi-day K-Line from Tencent
-                const daysMap = { '1m': 22, '3m': 66, '1y': 250, '5y': 1200 };
+                const daysMap = { '5d': 5, '1m': 22, '3m': 66, '1y': 250, '5y': 1200 };
                 const count = daysMap[period] || 66;
                 const url = meta.market === 'hk'
-                    ? `https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?_var=kline&param=${meta.tencentCode},day,,,${count},qfq`
-                    : `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline&param=${meta.tencentCode},day,,,${count},qfq`;
+                    ? `https://web.ifzq.gtimg.cn/appstock/app/hkfqkline/get?_var=kline&param=${queryCode},day,,,${count},qfq`
+                    : `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline&param=${queryCode},day,,,${count},qfq`;
 
                 const res = await fetch(url, {
                     headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -411,8 +480,8 @@ export async function fetchUnifiedChartSeries(
                 const jsonStr = text.replace(/^kline=/, '').trim();
                 const json = JSON.parse(jsonStr);
                 const rawCandles: (string | object)[][] =
-                    json?.data?.[meta.tencentCode!]?.qfqday ||
-                    json?.data?.[meta.tencentCode!]?.day ||
+                    json?.data?.[queryCode!]?.qfqday ||
+                    json?.data?.[queryCode!]?.day ||
                     [];
 
                 const points: ChartDataPoint[] = [];

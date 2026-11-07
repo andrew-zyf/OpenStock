@@ -24,6 +24,8 @@ export type Market = {
     pulse: { symbol: string; label: string; finnhub?: string }[];
     // Priced from Yahoo instead of TradingView: tiles, leaders and quotes are our own components
     yahoo?: true;
+    // Uses native Level-1 real-time quotes table and movers instead of TradingView widgets
+    native?: true;
     groups: { title: string; symbols: [symbol: string, name: string][] }[];
     heatmap?: 'stocks' | 'crypto';
     news: 'stock' | 'crypto' | 'forex';
@@ -33,7 +35,7 @@ const hm = (h: number, m = 0) => h * 60 + m;
 
 export const MARKETS: Market[] = [
     {
-        id: 'us', name: '美国', short: '美股', timeZone: 'America/New_York', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live',
+        id: 'us', name: '美股', short: '美股', timeZone: 'America/New_York', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live', native: true,
         pulse: [
             { symbol: 'AMEX:SPY', label: '标普 500', finnhub: 'SPY' },
             { symbol: 'NASDAQ:QQQ', label: '纳斯达克 100', finnhub: 'QQQ' },
@@ -41,19 +43,19 @@ export const MARKETS: Market[] = [
             { symbol: 'AMEX:IWM', label: '罗素 2000', finnhub: 'IWM' },
         ],
         groups: [
-            { title: '金融', symbols: [['NYSE:JPM', 'JPMorgan Chase'], ['NYSE:BAC', 'Bank of America'], ['NYSE:WFC', 'Wells Fargo'], ['NYSE:GS', 'Goldman Sachs'], ['NYSE:MA', 'Mastercard'], ['NYSE:V', 'Visa']] },
-            { title: '科技', symbols: [['NASDAQ:AAPL', 'Apple'], ['NASDAQ:MSFT', 'Microsoft'], ['NASDAQ:NVDA', 'NVIDIA'], ['NASDAQ:GOOGL', 'Alphabet'], ['NASDAQ:META', 'Meta'], ['NASDAQ:AMD', 'AMD']] },
-            { title: '消费', symbols: [['NASDAQ:AMZN', 'Amazon'], ['NASDAQ:TSLA', 'Tesla'], ['NYSE:WMT', 'Walmart'], ['NASDAQ:COST', 'Costco'], ['NYSE:KO', 'Coca-Cola'], ['NASDAQ:NFLX', 'Netflix']] },
+            { title: '科技先锋', symbols: [['NASDAQ:AAPL', 'Apple'], ['NASDAQ:MSFT', 'Microsoft'], ['NASDAQ:NVDA', 'NVIDIA'], ['NASDAQ:GOOGL', 'Alphabet'], ['NASDAQ:META', 'Meta'], ['NASDAQ:AMD', 'AMD']] },
+            { title: '核心金融', symbols: [['NYSE:JPM', 'JPMorgan Chase'], ['NYSE:BAC', 'Bank of America'], ['NYSE:WFC', 'Wells Fargo'], ['NYSE:GS', 'Goldman Sachs'], ['NYSE:MA', 'Mastercard'], ['NYSE:V', 'Visa']] },
+            { title: '消费制造', symbols: [['NASDAQ:AMZN', 'Amazon'], ['NASDAQ:TSLA', 'Tesla'], ['NYSE:WMT', 'Walmart'], ['NASDAQ:COST', 'Costco'], ['NYSE:KO', 'Coca-Cola'], ['NASDAQ:NFLX', 'Netflix']] },
         ],
         heatmap: 'stocks', news: 'stock',
     },
     {
-        id: 'cn', name: '中国', short: 'A股', timeZone: 'Asia/Shanghai', hours: { open: hm(9, 30), close: hm(15) }, feed: 'Delayed',
+        id: 'cn', name: 'A股', short: 'A股', timeZone: 'Asia/Shanghai', hours: { open: hm(9, 30), close: hm(15) }, feed: 'Live', native: true,
         pulse: [
-            { symbol: 'SSE:000001', label: '上证指数' },
-            { symbol: 'SZSE:399001', label: '深证成指' },
-            { symbol: 'SSE:000300', label: '沪深 300' },
-            { symbol: 'SZSE:399006', label: '创业板指' },
+            { symbol: 'SSE:000001', label: '上证指数', finnhub: '000001.SS' },
+            { symbol: 'SZSE:399001', label: '深证成指', finnhub: '399001.SZ' },
+            { symbol: 'SSE:000300', label: '沪深 300', finnhub: '000300.SS' },
+            { symbol: 'SZSE:399006', label: '创业板指', finnhub: '399006.SZ' },
         ],
         groups: [
             { title: '核心蓝筹', symbols: [['SSE:600519', '贵州茅台'], ['SZSE:300750', '宁德时代'], ['SZSE:002594', '比亚迪'], ['SSE:601318', '中国平安'], ['SSE:600036', '招商银行'], ['SSE:600900', '长江电力']] },
@@ -63,12 +65,12 @@ export const MARKETS: Market[] = [
         news: 'stock',
     },
     {
-        id: 'hk', name: '香港', short: '港股', timeZone: 'Asia/Hong_Kong', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Delayed',
+        id: 'hk', name: '港股', short: '港股', timeZone: 'Asia/Hong_Kong', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live', native: true,
         pulse: [
-            { symbol: 'HKEX:2800', label: '盈富基金 (恒指)' },
-            { symbol: 'HKEX:3033', label: '南方恒生科技' },
-            { symbol: 'HKEX:0700', label: '腾讯控股' },
-            { symbol: 'HKEX:9988', label: '阿里巴巴' },
+            { symbol: 'HKEX:2800', label: '恒生指数 (盈富)', finnhub: '2800.HK' },
+            { symbol: 'HKEX:3033', label: '恒生科技 (南方)', finnhub: '3033.HK' },
+            { symbol: 'HKEX:0700', label: '腾讯控股', finnhub: '0700.HK' },
+            { symbol: 'HKEX:9988', label: '阿里巴巴', finnhub: '9988.HK' },
         ],
         groups: [
             { title: '科技互联网', symbols: [['HKEX:0700', '腾讯控股'], ['HKEX:9988', '阿里巴巴'], ['HKEX:3690', '美团'], ['HKEX:1810', '小米集团'], ['HKEX:9888', '百度集团'], ['HKEX:9618', '京东集团']] },
@@ -78,12 +80,12 @@ export const MARKETS: Market[] = [
         news: 'stock',
     },
     {
-        id: 'tw', name: '台湾', short: '台股', timeZone: 'Asia/Taipei', hours: { open: hm(9), close: hm(13, 30) }, feed: 'Delayed',
+        id: 'tw', name: '台股', short: '台股', timeZone: 'Asia/Taipei', hours: { open: hm(9), close: hm(13, 30) }, feed: 'Live', native: true,
         pulse: [
-            { symbol: 'TWSE:0050', label: '元大台湾50' },
-            { symbol: 'TWSE:2330', label: '台积电' },
-            { symbol: 'TWSE:2317', label: '鸿海' },
-            { symbol: 'TWSE:2454', label: '联发科' },
+            { symbol: 'TWSE:0050', label: '元大台湾50', finnhub: '0050.TW' },
+            { symbol: 'TWSE:2330', label: '台积电', finnhub: '2330.TW' },
+            { symbol: 'TWSE:2317', label: '鸿海', finnhub: '2317.TW' },
+            { symbol: 'TWSE:2454', label: '联发科', finnhub: '2454.TW' },
         ],
         groups: [
             { title: '半导体电子', symbols: [['TWSE:2330', '台积电'], ['TWSE:2454', '联发科'], ['TWSE:2303', '联电'], ['TWSE:2379', '瑞昱'], ['TWSE:3034', '联咏'], ['TWSE:3711', '日月光投控']] },

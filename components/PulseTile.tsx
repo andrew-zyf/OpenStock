@@ -15,6 +15,26 @@ export default function PulseTile({ symbol, label, initial }: { symbol: string; 
     const live = useLiveQuotes([symbol]);
     const quote = live[symbol] ?? initial;
     const isCrypto = symbol.startsWith('BINANCE:');
+    const isCNIndex = symbol === '000001.SS' || symbol === '399001.SZ' || symbol === '000300.SS' || symbol === '399006.SZ';
+    const isCN = symbol.endsWith('.SS') || symbol.endsWith('.SZ') || /^\d{6}$/.test(symbol);
+    const isHK = symbol.endsWith('.HK');
+    const isTW = symbol.endsWith('.TW');
+
+    let prefix = '$';
+    let suffix = '';
+    if (isCNIndex) {
+        prefix = '';
+        suffix = ' 点';
+    } else if (isCN) {
+        prefix = '¥';
+    } else if (isHK) {
+        prefix = 'HK$';
+    } else if (isTW) {
+        prefix = 'NT$';
+    } else if (isCrypto) {
+        prefix = '';
+        suffix = ' USDT';
+    }
 
     return (
         <Link href={`/stocks/${encodeURIComponent(symbol)}`} className="bento-tile transition-colors hover:bg-hover/60">
@@ -25,14 +45,20 @@ export default function PulseTile({ symbol, label, initial }: { symbol: string; 
             </div>
             <PriceFlash value={quote?.c} className="bento-value self-start">
                 {quote?.c ? (
-                    isCrypto ? <>{formatAmount(quote.c)}<small> USDT</small></> : <><small>$</small>{formatAmount(quote.c)}</>
+                    <>
+                        {prefix ? <small>{prefix}</small> : null}
+                        {formatAmount(quote.c)}
+                        {suffix ? <small>{suffix}</small> : null}
+                    </>
                 ) : '—'}
             </PriceFlash>
             <div className="bento-foot">
                 {quote?.c ? (
                     <>
                         <ChangePill value={quote.dp} />
-                        <span className="num truncate">{(quote.d ?? 0) > 0 ? '+' : ''}{formatAmount(quote.d ?? 0)} 较昨收</span>
+                        <span className="num truncate">
+                            {(quote.d ?? 0) > 0 ? '+' : ''}{formatAmount(quote.d ?? 0)}{isCNIndex ? ' 点' : ''} 较昨收
+                        </span>
                     </>
                 ) : (
                     <span>暂无行情</span>

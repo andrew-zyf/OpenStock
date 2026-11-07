@@ -8,14 +8,15 @@ import { getUnifiedChartSeries } from "@/lib/actions/realtime-market.actions";
 import { formatPrice, tradingViewSymbolUrl } from "@/lib/utils";
 import type { ChartSeries } from "@/lib/realtime-market";
 
-type Period = '1d' | '1m' | '3m' | '1y' | '5y';
+type Period = '1d' | '5d' | '1m' | '3m' | '1y' | '5y';
 
 const PERIODS: { id: Period; label: string }[] = [
     { id: '1d', label: '分时' },
-    { id: '1m', label: '1个月' },
-    { id: '3m', label: '3个月' },
-    { id: '1y', label: '1年' },
-    { id: '5y', label: '5年' },
+    { id: '5d', label: '五日' },
+    { id: '1m', label: '日K' },
+    { id: '3m', label: '季K' },
+    { id: '1y', label: '周K' },
+    { id: '5y', label: '月K' },
 ];
 
 export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; tvSymbol: string }) {
@@ -108,8 +109,10 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     );
 
     const subTitle = period === '1d'
-        ? '实时分时走势 (1分钟级直连) · 支持盘中微小波动追踪'
-        : '历史 K 线走势 · 每日复权收盘价';
+        ? '实时分时走势 (1分钟级直连) · 智能追踪盘中微小波动'
+        : period === '5d'
+            ? '五日分时走势 · 连贯多日盘中走势'
+            : '智能多时段 K 线走势 · 每日复权数据';
 
     return (
         <Panel
@@ -136,15 +139,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                     <div className="flex items-center gap-4 text-xs text-faint">
                         <span>周期最低: <strong className="num text-foreground">{formatPrice(minPrice, currency)}</strong></span>
                         <span>周期最高: <strong className="num text-foreground">{formatPrice(maxPrice, currency)}</strong></span>
-                        <a
-                            href={tradingViewSymbolUrl(tvSymbol)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-ghost h-7 px-2 text-xs"
-                            title="在 TradingView 官方页面查看完整技术指标与交互图表"
-                        >
-                            在 TradingView 查看 <ArrowUpRight className="size-3" />
-                        </a>
+                        <span className="mono text-[11px] text-faint">15 秒实时刷新</span>
                     </div>
                 </div>
 
@@ -223,15 +218,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                         </svg>
                     ) : (
                         <div className="flex size-full flex-col items-center justify-center gap-2 text-sm text-faint">
-                            <p>该股票暂无分时或历史数据</p>
-                            <a
-                                href={tradingViewSymbolUrl(tvSymbol)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-ghost btn-sm"
-                            >
-                                前往 TradingView 查看图表 <ArrowUpRight className="size-3.5" />
-                            </a>
+                            <p>该标的暂无此周期行情数据，请切换至其他时段查看。</p>
                         </div>
                     )}
                 </div>

@@ -52,11 +52,7 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
                 <div className="flex min-w-0 flex-col gap-3">
-                    {isChartEmbeddable(tvSymbol) ? (
-                        <StockChart tvSymbol={tvSymbol} scriptUrl={`${scriptUrl}advanced-chart.js`} />
-                    ) : (
-                        <YahooStockChart symbol={symbol} tvSymbol={tvSymbol} />
-                    )}
+                    <YahooStockChart symbol={symbol} tvSymbol={tvSymbol} />
                     <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
                         <TradingViewWidget
                             scriptUrl={`${scriptUrl}financials.js`}

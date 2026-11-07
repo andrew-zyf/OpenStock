@@ -237,6 +237,23 @@ export function isInternationalSymbol(symbol: string): boolean {
     return Object.keys(FINNHUB_TO_TRADINGVIEW_EXCHANGE).some((suffix) => upper.endsWith(suffix.toUpperCase()));
 }
 
+export function tvToAppSymbol(symbol: string): string {
+    if (!symbol) return '';
+    const upper = symbol.trim().toUpperCase();
+    if (upper.startsWith('SSE:')) return `${upper.slice(4)}.SS`;
+    if (upper.startsWith('SZSE:')) return `${upper.slice(5)}.SZ`;
+    if (upper.startsWith('HKEX:')) {
+        const num = upper.slice(5);
+        return `${num.padStart(4, '0')}.HK`;
+    }
+    if (upper.startsWith('TWSE:')) return `${upper.slice(5)}.TW`;
+    if (upper.startsWith('TPEX:')) return `${upper.slice(5)}.TWO`;
+    if (upper.startsWith('NASDAQ:') || upper.startsWith('NYSE:') || upper.startsWith('AMEX:')) {
+        return upper.replace(/^(NASDAQ:|NYSE:|AMEX:)/, '');
+    }
+    return upper;
+}
+
 export function formatSymbolForTradingView(symbol: string): string {
     if (!symbol) return '';
     const upperSymbol = symbol.toUpperCase();
