@@ -141,3 +141,136 @@ export async function getChineseLiveNews(): Promise<ChineseNewsItem[]> {
         return [];
     }
 }
+
+/**
+ * Fetch comprehensive multi-market news covering:
+ *   - A-Shares (SSE / SZSE)
+ *   - Hong Kong (HKEX)
+ *   - Taiwan (TWSE / TPEX - cnYES)
+ *   - US Stocks (Finnhub & Sina Global)
+ */
+export async function getMultiMarketNews(symbols?: string[]): Promise<MarketNewsArticle[]> {
+    try {
+        const cleanSymbols = (symbols || []).map((s) => s.trim().toUpperCase()).filter(Boolean);
+
+        const [aRes, hkRes, twRes, usRes] = await Promise.all([
+            // A股滚动资讯 (Sina)
+            fetch('https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2517&k=&num=15&page=1', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 120 },
+            }).then((r) => r.json()).catch(() => null),
+
+            // 港股滚动资讯 (Sina)
+            fetch('https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2518&k=&num=15&page=1', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 120 },
+            }).then((r) => r.json()).catch(() => null),
+
+            // 台湾台股资讯 (cnYES 钜亨网)
+            fetch('https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?limit=15', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 120 },
+            }).then((r) => r.json()).catch(() => null),
+
+            // 美股与全球宏观要闻 (Sina)
+            fetch('https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=15&page=1', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 120 },
+            }).then((r) => r.json()).catch(() => null),
+        ]);
+
+        const articles: MarketNewsArticle[] = [];
+        const seenTitles = new Set<string>();
+
+        // 1. Parse A-Share Articles
+        for (const item of aRes?.result?.data || []) {
+            const headline = (item.title || '').trim();
+            if (!headline || seenTitles.has(headline)) continue;
+            seenTitles.add(headline);
+            articles.push({
+                id: Number(item.oid) || Date.now() + Math.random(),
+                headline,
+                summary: (item.intro || headline).trim(),
+                source: item.media_name || 'A股要闻',
+                url: item.url || '',
+                datetime: Number(item.ctime) || Math.floor(Date.now() / 1000),
+                category: 'A股',
+                related: 'A股',
+            });
+        }
+
+        // 2. Parse Hong Kong Articles
+        for (const item of hkRes?.result?.data || []) {
+            const headline = (item.title || '').trim();
+            if (!headline || seenTitles.has(headline)) continue;
+            seenTitles.add(headline);
+            articles.push({
+                id: Number(item.oid) || Date.now() + Math.random(),
+                headline,
+                summary: (item.intro || headline).trim(),
+                source: item.media_name || '港股资讯',
+                url: item.url || '',
+                datetime: Number(item.ctime) || Math.floor(Date.now() / 1000),
+                category: '港股',
+                related: '港股',
+            });
+        }
+
+        // 3. Parse Taiwan Articles (cnYES)
+        for (const item of twRes?.items?.data || []) {
+            const headline = (item.title || '').trim();
+            if (!headline || seenTitles.has(headline)) continue;
+            seenTitles.add(headline);
+            const stockName = item.market?.[0]?.name;
+            const stockCode = item.market?.[0]?.code;
+            articles.push({
+                id: Number(item.newsId) || Date.now() + Math.random(),
+                headline,
+                summary: (item.summary || headline).replace(/&#10;/g, ' ').trim(),
+                source: '钜亨网',
+                url: `https://news.cnyes.com/news/id/${item.newsId}`,
+                datetime: Number(item.publishAt) || Math.floor(Date.now() / 1000),
+                category: '台股',
+                related: stockCode ? `${stockCode}.TW` : '台股',
+            });
+        }
+
+        // 4. Parse US Articles
+        for (const item of usRes?.result?.data || []) {
+            const headline = (item.title || '').trim();
+            if (!headline || seenTitles.has(headline)) continue;
+            seenTitles.add(headline);
+            articles.push({
+                id: Number(item.oid) || Date.now() + Math.random(),
+                headline,
+                summary: (item.intro || headline).trim(),
+                source: item.media_name || '美股/宏观',
+                url: item.url || '',
+                datetime: Number(item.ctime) || Math.floor(Date.now() / 1000),
+                category: '美股',
+                related: '美股',
+            });
+        }
+
+        // If user has watchlist symbols, tag and prioritize articles matching those symbols
+        if (cleanSymbols.length > 0) {
+            for (const art of articles) {
+                for (const sym of cleanSymbols) {
+                    const baseSym = sym.replace(/\.(SS|SZ|HK|TW)$/, '');
+                    if (art.headline.includes(baseSym) || art.summary.includes(baseSym)) {
+                        art.related = sym;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Sort descending by time
+        articles.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
+        return articles;
+    } catch (e) {
+        console.error('getMultiMarketNews error', e);
+        return [];
+    }
+}
+

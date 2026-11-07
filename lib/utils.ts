@@ -217,10 +217,10 @@ const FINNHUB_TO_TRADINGVIEW_EXCHANGE: Record<string, string> = {
     '.SR': 'TADAWUL', // Saudi Exchange (2222.SR -> TADAWUL:2222)
 };
 
-// Exchanges whose candle chart TradingView refuses in free embeds ("This symbol doesn't exist"), each confirmed
-// with two tickers. Financials, technicals and profile still work for them.
-// ponytail: static list, re-test with a real browser user agent if TradingView changes its licensing.
-const CHART_BLOCKED_EXCHANGES = new Set(['TSE', 'HKEX', 'LSE', 'KRX', 'TWSE', 'SGX', 'NZX', 'SET', 'MYX', 'BIST', 'TSXV', 'BMV', 'JSE', 'TADAWUL']);
+// Exchanges whose candle chart TradingView refuses in free embeds ("This symbol doesn't exist"), or only provides
+// delayed end-of-day data with intraday minute disabled (SSE, SZSE).
+// These exchanges use our native high-performance realtime chart (with minute time-sharing & K-lines).
+const CHART_BLOCKED_EXCHANGES = new Set(['TSE', 'HKEX', 'LSE', 'KRX', 'TWSE', 'SGX', 'NZX', 'SET', 'MYX', 'BIST', 'TSXV', 'BMV', 'JSE', 'TADAWUL', 'SSE', 'SZSE']);
 
 export const isChartEmbeddable = (tvSymbol: string) => !CHART_BLOCKED_EXCHANGES.has(tvSymbol.split(':')[0]);
 

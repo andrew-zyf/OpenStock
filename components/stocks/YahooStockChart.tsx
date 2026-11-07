@@ -1,24 +1,26 @@
 'use client';
 
 import React, { useEffect, useState, useTransition } from "react";
-import { ArrowUpRight, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowUpRight, Clock } from "lucide-react";
 import Panel from "@/components/Panel";
 import ChangePill from "@/components/ChangePill";
-import { getYahooHistoricalChart, type YahooHistoricalChartData } from "@/lib/actions/yahoo.actions";
+import { getUnifiedChartSeries } from "@/lib/actions/realtime-market.actions";
 import { formatPrice, tradingViewSymbolUrl } from "@/lib/utils";
+import type { ChartSeries } from "@/lib/realtime-market";
 
-type Range = '1mo' | '3mo' | '1y' | '5y';
+type Period = '1d' | '1m' | '3m' | '1y' | '5y';
 
-const RANGES: { id: Range; label: string }[] = [
-    { id: '1mo', label: '1个月' },
-    { id: '3mo', label: '3个月' },
+const PERIODS: { id: Period; label: string }[] = [
+    { id: '1d', label: '分时' },
+    { id: '1m', label: '1个月' },
+    { id: '3m', label: '3个月' },
     { id: '1y', label: '1年' },
     { id: '5y', label: '5年' },
 ];
 
 export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; tvSymbol: string }) {
-    const [range, setRange] = useState<Range>('3mo');
-    const [chartData, setChartData] = useState<YahooHistoricalChartData | null>(null);
+    const [period, setPeriod] = useState<Period>('1d');
+    const [chartData, setChartData] = useState<ChartSeries | null>(null);
     const [loading, setLoading] = useState(true);
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
     const [, startTransition] = useTransition();
@@ -26,7 +28,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     useEffect(() => {
         let active = true;
         setLoading(true);
-        getYahooHistoricalChart(symbol, range).then((data) => {
+        getUnifiedChartSeries(symbol, period).then((data) => {
             if (active) {
                 setChartData(data);
                 setHoverIndex(null);
@@ -36,10 +38,10 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
         return () => {
             active = false;
         };
-    }, [symbol, range]);
+    }, [symbol, period]);
 
-    const handleRangeChange = (next: Range) => {
-        setRange(next);
+    const handlePeriodChange = (next: Period) => {
+        setPeriod(next);
         startTransition(() => {});
     };
 
@@ -71,8 +73,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     });
 
     const isUp = (chartData?.change ?? 0) >= 0;
-    const strokeColor = isUp ? 'var(--up, #10b981)' : 'var(--down, #ef4444)';
-    const fillColor = isUp ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)';
+    const strokeColor = isUp ? 'var(--up, #ef4444)' : 'var(--down, #10b981)';
 
     let pathD = '';
     let areaD = '';
@@ -84,17 +85,21 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     }
 
     const activePoint = hoverIndex != null && coords[hoverIndex] ? coords[hoverIndex].point : null;
-    const activePrice = activePoint ? activePoint.close : chartData?.currentPrice;
-    const activeDate = activePoint ? activePoint.date : null;
+    const activePrice = activePoint ? activePoint.close : chartData?.latestPrice;
+    const activeLabel = activePoint
+        ? period === '1d'
+            ? activePoint.time
+            : activePoint.date
+        : null;
 
     const action = (
         <div className="flex items-center gap-1.5">
-            {RANGES.map(({ id, label }) => (
+            {PERIODS.map(({ id, label }) => (
                 <button
                     key={id}
                     type="button"
-                    onClick={() => handleRangeChange(id)}
-                    className={`btn h-7 px-2 text-[12px] ${range === id ? 'btn-primary font-semibold' : 'btn-ghost text-faint'}`}
+                    onClick={() => handlePeriodChange(id)}
+                    className={`btn h-7 px-2.5 text-[12px] ${period === id ? 'btn-primary font-semibold' : 'btn-ghost text-faint'}`}
                 >
                     {label}
                 </button>
@@ -102,10 +107,14 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
         </div>
     );
 
+    const subTitle = period === '1d'
+        ? '实时分时走势 (1分钟级直连) · 支持盘中微小波动追踪'
+        : '历史 K 线走势 · 每日复权收盘价';
+
     return (
         <Panel
-            title="价格走势图表"
-            sub="行情源自 Yahoo Finance · 每日收盘数据"
+            title="实时价格走势"
+            sub={subTitle}
             action={action}
         >
             <div className="flex flex-col gap-3 p-4">
@@ -117,8 +126,11 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                         {chartData && (
                             <ChangePill value={chartData.changePercent} />
                         )}
-                        {activeDate && (
-                            <span className="mono text-xs text-faint">{activeDate}</span>
+                        {activeLabel && (
+                            <span className="mono flex items-center gap-1 text-xs font-semibold text-brand-ink">
+                                <Clock className="size-3" />
+                                {activeLabel}
+                            </span>
                         )}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-faint">
@@ -139,7 +151,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                 <div className="relative h-[380px] w-full">
                     {loading ? (
                         <div className="flex size-full items-center justify-center text-sm text-faint">
-                            正在加载历史走势图...
+                            正在加载实时图表数据...
                         </div>
                     ) : coords.length > 1 ? (
                         <svg
@@ -197,7 +209,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                                 const rectX = Math.max(0, c.x - step / 2);
                                 return (
                                     <rect
-                                        key={c.point.date + i}
+                                        key={c.point.time + i}
                                         x={rectX}
                                         y={0}
                                         width={step}
@@ -211,7 +223,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                         </svg>
                     ) : (
                         <div className="flex size-full flex-col items-center justify-center gap-2 text-sm text-faint">
-                            <p>该股票暂无历史 K 线内嵌数据</p>
+                            <p>该股票暂无分时或历史数据</p>
                             <a
                                 href={tradingViewSymbolUrl(tvSymbol)}
                                 target="_blank"

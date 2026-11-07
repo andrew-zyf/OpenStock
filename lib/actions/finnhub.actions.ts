@@ -9,6 +9,8 @@ import { getYahooDailyQuotes } from '@/lib/actions/yahoo.actions';
 import { isTadawulSymbol } from '@/lib/yahoo';
 import { getSession } from '@/lib/better-auth/auth';
 import { findChineseStocks } from '@/lib/chinese-stocks';
+import { fetchRealtimeQuotes } from '@/lib/realtime-market';
+import { getMultiMarketNews } from '@/lib/actions/china-market.actions';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 // Key pool: each free key has its own 60 req/min, so N keys = N x the quota. Rotated per request.
@@ -186,10 +188,47 @@ export async function getQuote(symbol: string, revalidateSeconds = 0) {
 }
 
 // Shared, short-lived quotes for anything shown live on screen (pages and /api/quotes)
+// Supports A-Shares, Hong Kong, Taiwan, and US in real-time
 export async function getLiveQuotes(symbols: string[]) {
-    // Symbols the free plan can't price are skipped instead of spending a request on a 403
-    const quotes = await Promise.all(symbols.map((s) => (hasFinnhubQuotes(s) ? getQuote(s, LIVE_QUOTE_TTL) : null)));
-    return Object.fromEntries(symbols.map((s, i) => [s, quotes[i]?.c ? quotes[i] : null]));
+    if (!symbols.length) return {};
+    const realtimeMap = await fetchRealtimeQuotes(symbols);
+
+    // Fallback to Finnhub for any US symbol without a realtime result
+    const missingUs = symbols.filter((s) => !realtimeMap[s]?.c && hasFinnhubQuotes(s));
+    if (missingUs.length > 0) {
+        const finnhubQuotes = await Promise.all(missingUs.map((s) => getQuote(s, LIVE_QUOTE_TTL)));
+        missingUs.forEach((s, idx) => {
+            const fq = finnhubQuotes[idx];
+            if (fq?.c) {
+                realtimeMap[s] = {
+                    symbol: s,
+                    name: s,
+                    price: fq.c,
+                    prevClose: fq.pc || 0,
+                    open: fq.o || 0,
+                    high: fq.h || 0,
+                    low: fq.l || 0,
+                    change: fq.d || 0,
+                    changePercent: fq.dp || 0,
+                    volume: 0,
+                    currency: 'USD',
+                    exchange: 'US',
+                    market: 'us',
+                    updatedAt: '',
+                    c: fq.c,
+                    d: fq.d || 0,
+                    dp: fq.dp || 0,
+                    h: fq.h || 0,
+                    l: fq.l || 0,
+                    o: fq.o || 0,
+                    pc: fq.pc || 0,
+                    t: fq.t || Math.floor(Date.now() / 1000),
+                };
+            }
+        });
+    }
+
+    return Object.fromEntries(symbols.map((s) => [s, realtimeMap[s] ?? null]));
 }
 
 export async function getCompanyProfile(symbol: string) {
@@ -227,13 +266,45 @@ export async function getStockMetrics(symbol: string): Promise<number | null> {
 export async function getWatchlistData(symbols: string[]) {
     if (!symbols || symbols.length === 0) return [];
 
-    // Finnhub free doesn't price Tadawul; Yahoo does (delayed)
-    const saudi = await getYahooDailyQuotes(symbols.filter(isTadawulSymbol));
+    // 1. Fetch real-time quotes across CN, HK, TW, and US
+    const realtimeMap = await fetchRealtimeQuotes(symbols);
 
-    // Fetch quotes and profiles in parallel
+    // 2. Finnhub free doesn't price Tadawul; Yahoo does (delayed)
+    const saudiSymbols = symbols.filter(isTadawulSymbol);
+    const saudi = saudiSymbols.length > 0 ? await getYahooDailyQuotes(saudiSymbols) : {};
+
+    // 3. For any remaining US symbols, get Finnhub profile & quote
     const promises = symbols.map(async (sym) => {
+        const rt = realtimeMap[sym];
+        if (rt && rt.price > 0) {
+            return {
+                symbol: sym,
+                price: rt.price,
+                change: rt.change,
+                changePercent: rt.changePercent,
+                currency: rt.currency,
+                name: rt.name || sym,
+                logo: undefined,
+                marketCap: rt.marketCap,
+                peRatio: rt.pe || 0,
+            };
+        }
+
         const y = saudi[sym];
-        if (y) return { symbol: sym, price: y.price, change: y.change, changePercent: y.changePercent, currency: y.currency, name: y.name || sym, logo: undefined, marketCap: undefined, peRatio: 0 };
+        if (y) {
+            return {
+                symbol: sym,
+                price: y.price,
+                change: y.change,
+                changePercent: y.changePercent,
+                currency: y.currency,
+                name: y.name || sym,
+                logo: undefined,
+                marketCap: undefined,
+                peRatio: 0,
+            };
+        }
+
         const covered = hasFinnhubQuotes(sym);
         const [quote, profile] = covered
             ? await Promise.all([getQuote(sym, LIVE_QUOTE_TTL), getCompanyProfile(sym)])
@@ -248,67 +319,22 @@ export async function getWatchlistData(symbols: string[]) {
             name: profile?.name || sym,
             logo: profile?.logo,
             marketCap: profile?.marketCapitalization,
-            peRatio: 0 // Finnhub 'quote' and 'profile2' don't easily give real-time PE. Might need 'metric' endpoint, but skipping for now to save rate limits.
+            peRatio: 0,
         };
     });
 
     return await Promise.all(promises);
 }
 
-
 export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> {
     try {
-        const range = getDateRange(5);
-        if (FINNHUB_KEYS.length === 0) {
-            throw new Error('FINNHUB API key is not configured');
-        }
-        const cleanSymbols = (symbols || [])
-            .map((s) => s?.trim().toUpperCase())
-            .filter((s): s is string => Boolean(s));
-
-        const maxArticles = 6;
-
-        // If we have symbols, try to fetch company news per symbol and round-robin select
-        if (cleanSymbols.length > 0) {
-            const perSymbolArticles: Record<string, RawNewsArticle[]> = {};
-
-            await Promise.all(
-                cleanSymbols.map(async (sym) => {
-                    try {
-                        const url = `${FINNHUB_BASE_URL}/company-news?symbol=${encodeURIComponent(sym)}&from=${range.from}&to=${range.to}`;
-                        const articles = await fetchJSON<RawNewsArticle[]>(url, 300);
-                        perSymbolArticles[sym] = (articles || []).filter(validateArticle);
-                    } catch (e) {
-                        console.error('Error fetching company news for', sym, e);
-                        perSymbolArticles[sym] = [];
-                    }
-                })
-            );
-
-            const collected: MarketNewsArticle[] = [];
-            // Round-robin up to 6 picks
-            for (let round = 0; round < maxArticles; round++) {
-                for (let i = 0; i < cleanSymbols.length; i++) {
-                    const sym = cleanSymbols[i];
-                    const list = perSymbolArticles[sym] || [];
-                    if (list.length === 0) continue;
-                    const article = list.shift();
-                    if (!article || !validateArticle(article)) continue;
-                    collected.push(formatArticle(article, true, sym, round));
-                    if (collected.length >= maxArticles) break;
-                }
-                if (collected.length >= maxArticles) break;
-            }
-
-            if (collected.length > 0) {
-                // Sort by datetime desc
-                collected.sort((a, b) => (b.datetime || 0) - (a.datetime || 0));
-                return collected.slice(0, maxArticles);
-            }
-            // If none collected, fall through to general news
+        // Multi-market news covering 美股、A股、港股、台股
+        const multiNews = await getMultiMarketNews(symbols);
+        if (multiNews && multiNews.length > 0) {
+            return multiNews;
         }
 
-        // General market news fallback or when no symbols provided
+        // Fallback to Finnhub general news if network error
         const generalUrl = `${FINNHUB_BASE_URL}/news?category=general`;
         const general = await fetchJSON<RawNewsArticle[]>(generalUrl, 300);
 
@@ -320,14 +346,13 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
             if (seen.has(key)) continue;
             seen.add(key);
             unique.push(art);
-            if (unique.length >= 20) break; // cap early before final slicing
+            if (unique.length >= 20) break;
         }
 
-        const formatted = unique.slice(0, maxArticles).map((a, idx) => formatArticle(a, false, undefined, idx));
-        return formatted;
+        return unique.slice(0, 15).map((a, idx) => formatArticle(a, false, undefined, idx));
     } catch (err) {
         console.error('getNews error:', err);
-        throw new Error('Failed to fetch news');
+        return [];
     }
 }
 
