@@ -4,7 +4,7 @@ import CreateAlertModal from "@/components/watchlist/CreateAlertModal";
 import StockLivePrice from "@/components/stocks/StockLivePrice";
 import { isStockInWatchlist } from "@/lib/actions/watchlist.actions";
 import { getCompanyProfile, getLiveQuotes } from "@/lib/actions/finnhub.actions";
-import { formatNumber, formatPrice, formatSymbolForTradingView } from "@/lib/utils";
+import { formatNumber, formatPrice } from "@/lib/utils";
 import { hasFinnhubQuotes } from "@/lib/markets";
 import { getRealtimeQuote } from "@/lib/actions/realtime-market.actions";
 
@@ -84,9 +84,9 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
 
                 <div className="flex items-center gap-2">
                     <WatchlistButton symbol={symbol} company={company} isInWatchlist={isInWatchlist} />
-                    <span className="pill h-9 px-3" title="价格预警功能需支持高频轮询的行情数据源">
-                        <Bell /> 预警支持美股与加密货币
-                    </span>
+                    <CreateAlertModal symbol={symbol} currentPrice={rt?.price} currency={currency}>
+                        <button type="button" className="btn btn-primary"><Bell /> 设置预警</button>
+                    </CreateAlertModal>
                 </div>
             </div>
 

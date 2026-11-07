@@ -287,7 +287,45 @@ export async function fetchCompanyProfile(rawSymbol: string): Promise<CompanyPro
         }
     }
 
-    // 2. Hong Kong or Taiwan: Check curated dictionary first
+    // 2. Hong Kong Stocks: Live EastMoney HK F10 Official OrgProfile API (covers all 2,600+ HKEX stocks)
+    if (meta.market === 'hk') {
+        try {
+            const num = sym.replace(/\.HK$/, '').padStart(5, '0');
+            const secucode = `${num}.HK`;
+            const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_HKF10_INFO_ORGPROFILE&columns=ALL&filter=(SECUCODE%3D%22${secucode}%22)`;
+            const res = await fetch(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 86400 },
+            });
+            if (res.ok) {
+                const j = await res.json();
+                const d = j?.result?.data?.[0];
+                if (d && (d.ORG_NAME || d.SECURITY_NAME_ABBR)) {
+                    return {
+                        symbol: sym,
+                        market: 'hk',
+                        name: d.ORG_NAME || d.SECURITY_NAME_ABBR,
+                        engName: d.ORG_EN_ABBR || undefined,
+                        industry: d.BELONG_INDUSTRY || '港股上市公司',
+                        sector: d.INDUSTRY_TYPE ? String(d.INDUSTRY_TYPE).split('-')[0] : (d.BELONG_MARKET || '香港主板'),
+                        exchange: `香港联合交易所 (HKEX: ${num})`,
+                        listingDate: d.LISTING_DATE ? String(d.LISTING_DATE).slice(0, 10) : undefined,
+                        chairman: d.CHAIRMAN || d.SECRETARY || undefined,
+                        employees: d.EMP_NUM ? `${Number(d.EMP_NUM).toLocaleString()} 人` : undefined,
+                        regCapital: d.REG_CAPITAL || undefined,
+                        website: d.ORG_WEB ? (String(d.ORG_WEB).startsWith('http') ? String(d.ORG_WEB) : `https://${d.ORG_WEB}`) : undefined,
+                        address: d.ADDRESS || d.REG_ADDRESS || undefined,
+                        intro: d.ORG_PROFILE ? String(d.ORG_PROFILE).trim() : `${d.ORG_NAME || sym} 是于香港联合交易所主板上市的知名企业。`,
+                        businessScope: d.MAIN_BUSINESS ? String(d.MAIN_BUSINESS).trim() : undefined,
+                    };
+                }
+            }
+        } catch (e) {
+            console.error('EastMoney HK F10 profile fetch error', e);
+        }
+    }
+
+    // 3. Taiwan or Hong Kong Curated Dictionary
     const curated = HK_TW_PROFILES[sym] || HK_TW_PROFILES[`0${sym}`] || HK_TW_PROFILES[sym.replace(/^0+/, '')];
     if (curated) {
         return {
@@ -308,6 +346,50 @@ export async function fetchCompanyProfile(rawSymbol: string): Promise<CompanyPro
             intro: curated.intro || `${curated.name || sym} 是在${meta.exchange}上市的核心企业。`,
             businessScope: curated.businessScope,
         };
+    }
+
+    // 4. Taiwan Stocks: Official Taiwan Stock Exchange OpenAPI (t187ap03_L - covers all 1,000+ TWSE listed companies)
+    if (meta.market === 'tw') {
+        try {
+            const code = sym.replace(/\.(TW|TWO)$/, '');
+            const res = await fetch('https://openapi.twse.com.tw/v1/opendata/t187ap03_L', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 86400 },
+            });
+            if (res.ok) {
+                const list: Record<string, string>[] = await res.json();
+                const row = list.find((item) => item['公司代號'] === code);
+                if (row) {
+                    const rawDate = row['上市日期'] || '';
+                    const formattedDate = rawDate.length === 8
+                        ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
+                        : rawDate;
+                    const capNtd = Number(row['實收資本額'] || 0);
+                    const capStr = capNtd >= 1e8 ? `新台币 ${(capNtd / 1e8).toFixed(2)} 亿元` : undefined;
+                    const web = row['網址'] ? (row['網址'].startsWith('http') ? row['網址'] : `https://${row['網址']}`) : undefined;
+
+                    return {
+                        symbol: sym,
+                        market: 'tw',
+                        name: `${row['公司名稱']} (${row['公司簡稱'] || code})`,
+                        engName: row['英文簡稱'] || undefined,
+                        industry: '台湾证券交易所上市公司',
+                        sector: `统一编号: ${row['營利事業統一編號'] || '—'}`,
+                        exchange: `台湾证券交易所 (TWSE: ${code})`,
+                        listingDate: formattedDate || undefined,
+                        chairman: row['董事長'] || undefined,
+                        generalManager: row['總經理'] || undefined,
+                        regCapital: capStr,
+                        website: web,
+                        address: row['住址'] || undefined,
+                        intro: `${row['公司名稱']}（简称：${row['公司簡稱']}，英文简称：${row['英文簡稱'] || '—'}）成立于 ${row['成立日期']?.slice(0, 4) || ''} 年，并于 ${formattedDate} 在台湾证券交易所正式挂牌上市。董事长为${row['董事長'] || '—'}，总经理为${row['總經理'] || '—'}，签证会计师事务所为${row['簽證會計師事務所'] || '—'}。`,
+                        businessScope: `发言人：${row['發言人'] || '—'}（${row['發言人職稱'] || ''}） · 已发行普通股数：${Number(row['已發行普通股數或TDR原股發行股數'] || 0).toLocaleString()} 股。`,
+                    };
+                }
+            }
+        } catch (e) {
+            console.error('TWSE OpenAPI profile fetch error', e);
+        }
     }
 
     // 3. Dynamic synthesis fallback for other HK/TW/CN stocks so it is NEVER blank

@@ -317,11 +317,11 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
         );
     }
 
-    // 2. Fetch Taiwan TWSE MIS
+    // 2. Fetch Taiwan TWSE MIS + Official TWSE OpenAPI Fundamentals (BWIBBU_ALL & t187ap03_L)
     if (twseQueries.length > 0) {
-        // Core Taiwan blue-chip shares (in shares) & valuation multiples for accurate marketCap / turnoverRate / PE / PB
+        // Seed dictionary for instant fallback; dynamically enriched by official TWSE OpenAPI
         const TW_FUNDAMENTALS: Record<string, { shares: number; pe?: number; pb?: number }> = {
-            '2330': { shares: 25930380458, pe: 28.4, pb: 7.65 },
+            '2330': { shares: 25932370067, pe: 28.4, pb: 7.65 },
             '2317': { shares: 13862990609, pe: 16.5, pb: 1.78 },
             '2454': { shares: 1600155290, pe: 21.8, pb: 5.12 },
             '2303': { shares: 12529116000, pe: 13.2, pb: 1.65 },
@@ -337,11 +337,47 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
             (async () => {
                 try {
                     const exCh = twseQueries.map((q) => q.twseCode).join('|');
-                    const res = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0`, {
-                        headers: { 'User-Agent': 'Mozilla/5.0' },
-                        next: { revalidate: 10 },
-                    });
+                    const [res, bwRes, sharesRes] = await Promise.all([
+                        fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0`, {
+                            headers: { 'User-Agent': 'Mozilla/5.0' },
+                            next: { revalidate: 10 },
+                        }),
+                        fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL', {
+                            headers: { 'User-Agent': 'Mozilla/5.0' },
+                            next: { revalidate: 3600 },
+                        }).catch(() => null),
+                        fetch('https://openapi.twse.com.tw/v1/opendata/t187ap03_L', {
+                            headers: { 'User-Agent': 'Mozilla/5.0' },
+                            next: { revalidate: 86400 },
+                        }).catch(() => null),
+                    ]);
                     if (!res.ok) return;
+
+                    if (bwRes && bwRes.ok) {
+                        const bwList: Record<string, string>[] = await bwRes.json().catch(() => []);
+                        for (const b of bwList) {
+                            const code = b.Code;
+                            if (!code) continue;
+                            const cur = TW_FUNDAMENTALS[code] || { shares: 0 };
+                            const peVal = Number(b.PEratio);
+                            const pbVal = Number(b.PBratio);
+                            if (peVal > 0) cur.pe = peVal;
+                            if (pbVal > 0) cur.pb = pbVal;
+                            TW_FUNDAMENTALS[code] = cur;
+                        }
+                    }
+
+                    if (sharesRes && sharesRes.ok) {
+                        const sList: Record<string, string>[] = await sharesRes.json().catch(() => []);
+                        for (const s of sList) {
+                            const code = s['公司代號'];
+                            if (!code) continue;
+                            const cur = TW_FUNDAMENTALS[code] || { shares: 0 };
+                            const sh = Number(s['已發行普通股數或TDR原股發行股數'] || 0);
+                            if (sh > 0) cur.shares = sh;
+                            TW_FUNDAMENTALS[code] = cur;
+                        }
+                    }
 
                     const json = await res.json();
                     const list = json?.msgArray || [];
@@ -362,7 +398,7 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
                         const turnover = volShares * price;
                         const amplitude = prevClose > 0 ? Number((((high - low) / prevClose) * 100).toFixed(2)) : 0;
                         const fund = TW_FUNDAMENTALS[item.c];
-                        const marketCap = fund ? price * fund.shares : undefined;
+                        const marketCap = fund && fund.shares > 0 ? price * fund.shares : undefined;
                         const turnoverRate = fund && fund.shares > 0 ? Number(((volShares / fund.shares) * 100).toFixed(2)) : undefined;
 
                         const quote: UnifiedQuote = {
@@ -624,14 +660,23 @@ export async function fetchUnifiedChartSeries(
 
             const daysCap = period === '1d' ? 300 : period === '1m' ? 22 : period === '3m' ? 66 : period === '1y' ? 250 : 1200;
             const total = data.t.length;
-            const startIdx = Math.max(0, total - daysCap);
+            const isDescending = total > 1 && data.t[0] > data.t[total - 1];
+
+            const indices: number[] = [];
+            if (isDescending) {
+                const count = Math.min(total, daysCap);
+                for (let i = count - 1; i >= 0; i--) indices.push(i);
+            } else {
+                const startIdx = Math.max(0, total - daysCap);
+                for (let i = startIdx; i < total; i++) indices.push(i);
+            }
 
             const points: ChartDataPoint[] = [];
-            for (let i = startIdx; i < total; i++) {
+            for (const i of indices) {
                 const ts = data.t[i] * 1000;
                 const d = new Date(ts);
                 const timeStr = period === '1d'
-                    ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+                    ? d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false })
                     : d.toISOString().split('T')[0];
                 const close = Number(data.c[i]);
                 if (!close) continue;

@@ -6,6 +6,7 @@ import DataFreshness from "@/components/DataFreshness";
 import MarketSwitcher from "@/components/MarketSwitcher";
 import CrossMarketBar from "@/components/CrossMarketBar";
 import ChinaMarketMacroBar from "@/components/ChinaMarketMacroBar";
+import SectorFlowPanel from "@/components/SectorFlowPanel";
 import ChineseNewsFlash from "@/components/ChineseNewsFlash";
 import { NativeMarketQuotesTable, NativeMarketMovers } from "@/components/NativeMarketQuotes";
 import { MARKETS, MARKET_COOKIE, getMarket, isMarketOpen, marketForCountry } from "@/lib/markets";
@@ -59,6 +60,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
             {/* 核心资产与异动排行 (雪球式布局，全本地原生渲染，点击即看分时) */}
             <div key={market.id} className="flex flex-col gap-3">
+                {/* 行业板块风向标：领涨板块 vs 主力吸筹板块 */}
+                {(market.id === 'cn' || market.id === 'hk' || market.id === 'tw') && (
+                    <Suspense fallback={null}>
+                        <SectorFlowPanel />
+                    </Suspense>
+                )}
+
                 <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                     <Panel title="异动领跑" sub={`${market.name}今日核心资产振幅排行 (点击进详情)`}>
                         <NativeMarketMovers market={market} />

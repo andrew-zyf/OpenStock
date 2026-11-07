@@ -464,6 +464,60 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
     const activeR12 = activeIdx != null ? visibleRsi12[activeIdx] : null;
     const activeR24 = activeIdx != null ? visibleRsi24[activeIdx] : null;
 
+    // 实时量价与技术形态多空诊断标签 (专为中国技术派老玩家打造)
+    const techSignals = useMemo(() => {
+        if (!visiblePoints.length || activePrice == null) return [];
+        const signals: { text: string; tone: 'up' | 'down' | 'warn' | 'neutral' }[] = [];
+
+        // 1. 均线系统诊断
+        if (activeMa5 != null && activeMa10 != null && activeMa20 != null) {
+            if (activeMa5 > activeMa10 && activeMa10 > activeMa20) {
+                signals.push({ text: '均线多头排列 (MA5>10>20)', tone: 'up' });
+            } else if (activeMa5 < activeMa10 && activeMa10 < activeMa20) {
+                signals.push({ text: '均线空头排列 (MA5<10<20)', tone: 'down' });
+            } else if (activePrice >= activeMa20) {
+                signals.push({ text: '站稳20日生命线', tone: 'up' });
+            } else {
+                signals.push({ text: '失守20日生命线', tone: 'down' });
+            }
+        }
+
+        // 2. MACD 动能诊断
+        if (activeDif != null && activeDea != null) {
+            if (activeDif > activeDea && activeDif > 0) {
+                signals.push({ text: 'MACD零轴上多头红柱', tone: 'up' });
+            } else if (activeDif > activeDea && activeDif <= 0) {
+                signals.push({ text: 'MACD水下金叉反弹', tone: 'up' });
+            } else {
+                signals.push({ text: 'MACD空头绿柱调整', tone: 'down' });
+            }
+        }
+
+        // 3. KDJ 超买超卖诊断
+        if (activeJ != null) {
+            if (activeJ >= 85) {
+                signals.push({ text: `KDJ超买钝化 (J=${activeJ.toFixed(0)})`, tone: 'warn' });
+            } else if (activeJ <= 15) {
+                signals.push({ text: `KDJ超卖黄金坑 (J=${activeJ.toFixed(0)})`, tone: 'up' });
+            }
+        }
+
+        // 4. BOLL 轨道位置诊断
+        if (activeBollUb != null && activeBollLb != null && activeBollMb != null) {
+            if (activePrice >= activeBollUb) {
+                signals.push({ text: '突破BOLL布林上轨', tone: 'up' });
+            } else if (activePrice <= activeBollLb) {
+                signals.push({ text: '回踩BOLL下轨支撑', tone: 'up' });
+            } else if (activePrice >= activeBollMb) {
+                signals.push({ text: 'BOLL中轨上方强势区', tone: 'neutral' });
+            } else {
+                signals.push({ text: 'BOLL中轨下方弱势区', tone: 'down' });
+            }
+        }
+
+        return signals;
+    }, [visiblePoints.length, activePrice, activeMa5, activeMa10, activeMa20, activeDif, activeDea, activeJ, activeBollUb, activeBollLb, activeBollMb]);
+
     // --- Zoom & Pan Event Handlers ---
     const handleZoomIn = () => {
         if (totalBars <= 10) return;
@@ -684,6 +738,31 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                         <span className="mono text-[11px] text-faint">15秒自动刷新</span>
                     </div>
                 </div>
+
+                {/* 技术形态与量价多空自动诊断条 */}
+                {techSignals.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pb-1 text-[11px]">
+                        <span className="text-faint font-semibold mr-1">多空形态诊断:</span>
+                        {techSignals.map((sig) => {
+                            const cls =
+                                sig.tone === 'up'
+                                    ? 'bg-red-500/15 text-up border-red-500/30'
+                                    : sig.tone === 'down'
+                                        ? 'bg-emerald-500/15 text-down border-emerald-500/30'
+                                        : sig.tone === 'warn'
+                                            ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                            : 'bg-page/60 text-muted-foreground border-line';
+                            return (
+                                <span
+                                    key={sig.text}
+                                    className={`rounded-md border px-2 py-0.5 font-semibold ${cls}`}
+                                >
+                                    {sig.text}
+                                </span>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* 主图指标栏 (MA5/10/20/60 或 BOLL) + 副图指标切换器 (VOL / MACD / KDJ / RSI) */}
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-medium">

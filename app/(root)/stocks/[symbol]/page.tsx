@@ -4,6 +4,7 @@ import StockSentimentCard from "@/components/stocks/StockSentimentCard";
 import YahooStockChart from "@/components/stocks/YahooStockChart";
 import OrderBookCard from "@/components/stocks/OrderBookCard";
 import CapitalFlowCard from "@/components/stocks/CapitalFlowCard";
+import StockIntelligenceCard from "@/components/stocks/StockIntelligenceCard";
 import NativeFinancials from "@/components/stocks/NativeFinancials";
 import NativeCompanyProfile from "@/components/stocks/NativeCompanyProfile";
 import TradingViewWidget from "@/components/TradingViewWidget";
@@ -15,7 +16,7 @@ import {
 } from "@/lib/constants";
 import { getStockSentimentInsights } from '@/lib/actions/adanos.actions';
 import { getStockMetrics } from '@/lib/actions/finnhub.actions';
-import { formatSymbolForTradingView, isChartEmbeddable } from '@/lib/utils';
+import { formatSymbolForTradingView } from '@/lib/utils';
 import { identifyMarketAndCode } from "@/lib/realtime-market";
 
 const scriptUrl = `https://s3.tradingview.com/external-embedding/embed-widget-`;
@@ -44,9 +45,9 @@ async function DividendYield({ symbol }: { symbol: string }) {
 export default async function StockDetails({ params }: StockDetailsPageProps) {
     const { symbol: rawSymbol } = await params;
     const symbol = decodeURIComponent(rawSymbol).toUpperCase();
-    const tvSymbol = formatSymbolForTradingView(symbol);
     const meta = identifyMarketAndCode(symbol);
     const isChineseMarket = meta.market === 'cn' || meta.market === 'hk' || meta.market === 'tw';
+    const tvSymbol = isChineseMarket ? symbol : formatSymbolForTradingView(symbol);
 
     return (
         <>
@@ -55,22 +56,28 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
             </Suspense>
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
-                {/* 左侧主视窗：走势主图与财务指标 */}
+                {/* 左侧主视窗：走势主图、财务指标与个股深度情报中心 */}
                 <div className="flex min-w-0 flex-col gap-3">
-                    <YahooStockChart symbol={symbol} tvSymbol={tvSymbol} />
+                    <YahooStockChart symbol={symbol} />
 
                     {isChineseMarket ? (
-                        <Suspense fallback={null}>
-                            <NativeFinancials symbol={symbol} />
-                        </Suspense>
+                        <>
+                            <Suspense fallback={null}>
+                                <NativeFinancials symbol={symbol} />
+                            </Suspense>
+                            <StockIntelligenceCard symbol={symbol} />
+                        </>
                     ) : (
-                        <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
-                            <TradingViewWidget
-                                scriptUrl={`${scriptUrl}financials.js`}
-                                config={COMPANY_FINANCIALS_WIDGET_CONFIG(tvSymbol)}
-                                height={500}
-                            />
-                        </Panel>
+                        <>
+                            <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
+                                <TradingViewWidget
+                                    scriptUrl={`${scriptUrl}financials.js`}
+                                    config={COMPANY_FINANCIALS_WIDGET_CONFIG(tvSymbol)}
+                                    height={500}
+                                />
+                            </Panel>
+                            <StockIntelligenceCard symbol={symbol} />
+                        </>
                     )}
                 </div>
 

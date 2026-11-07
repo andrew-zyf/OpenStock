@@ -7,7 +7,21 @@ export type ChinaMarketMacro = {
     szTurnoverText: string;
     usdcnhRate?: number;
     usdcnhChangePercent?: number;
+    upCount?: number;
+    downCount?: number;
+    flatCount?: number;
     updateTime: string;
+};
+
+export type SectorFlowItem = {
+    code: string;
+    name: string;
+    changePercent: number;
+    mainNetInflow: number;     // 主力净流入 (元)
+    mainNetRatio: number;      // 主力净占比 (%)
+    leaderName: string;        // 领涨股名称
+    leaderSymbol: string;      // 领涨股站内代码 (如 600025.SS / 000595.SZ)
+    leaderChangePercent: number;
 };
 
 export type ChineseNewsItem = {
@@ -21,7 +35,7 @@ export type ChineseNewsItem = {
 
 export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
     try {
-        const [sinaRes, yahooRes] = await Promise.all([
+        const [sinaRes, yahooRes, breadthRes] = await Promise.all([
             fetch('http://hq.sinajs.cn/list=s_sh000001,s_sz399001', {
                 headers: { Referer: 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0' },
                 next: { revalidate: 60 },
@@ -30,6 +44,10 @@ export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
                 next: { revalidate: 300 },
             }).catch(() => null),
+            fetch('http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f12,f14,f104,f105,f106', {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 30 },
+            }).catch(() => null),
         ]);
 
         if (!sinaRes.ok) return null;
@@ -37,7 +55,6 @@ export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
         const text = new TextDecoder('gbk').decode(buffer);
 
         // Parse Shanghai & Shenzhen turnover
-        // var hq_str_s_sh000001="上证指数,3649.1774,-40.7335,-1.10,4770425,77263457";
         const shMatch = text.match(/hq_str_s_sh000001="([^"]+)"/);
         const szMatch = text.match(/hq_str_s_sz399001="([^"]+)"/);
 
@@ -76,6 +93,30 @@ export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
             }
         }
 
+        // Parse Market Breadth (上涨 / 下跌 / 平盘家数)
+        let upCount: number | undefined;
+        let downCount: number | undefined;
+        let flatCount: number | undefined;
+        if (breadthRes && breadthRes.ok) {
+            const bJson = await breadthRes.json();
+            const diff = bJson?.data?.diff;
+            if (Array.isArray(diff) && diff.length > 0) {
+                let u = 0;
+                let d = 0;
+                let f = 0;
+                for (const item of diff) {
+                    u += Number(item.f104) || 0;
+                    d += Number(item.f105) || 0;
+                    f += Number(item.f106) || 0;
+                }
+                if (u + d + f > 0) {
+                    upCount = u;
+                    downCount = d;
+                    flatCount = f;
+                }
+            }
+        }
+
         const now = new Date();
         const updateTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -86,11 +127,72 @@ export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
             szTurnoverText: `${szYi.toLocaleString()} 亿`,
             usdcnhRate,
             usdcnhChangePercent,
+            upCount,
+            downCount,
+            flatCount,
             updateTime,
         };
     } catch (e) {
         console.error('China market macro error', e);
         return null;
+    }
+}
+
+export async function getChinaSectorRankings(): Promise<{
+    topGainers: SectorFlowItem[];
+    topInflows: SectorFlowItem[];
+}> {
+    const parseSectorList = (diff: Record<string, unknown>[]): SectorFlowItem[] => {
+        if (!Array.isArray(diff)) return [];
+        const seenNames = new Set<string>();
+        const out: SectorFlowItem[] = [];
+        for (const item of diff) {
+            const rawName = String(item.f14 || '').replace(/[ⅡⅢ]$/, '').trim();
+            if (!rawName || seenNames.has(rawName)) continue;
+            seenNames.add(rawName);
+
+            const leaderCode = String(item.f140 || '');
+            const leaderMkt = Number(item.f141);
+            const suffix = leaderMkt === 1 || leaderCode.startsWith('6') ? '.SS' : '.SZ';
+            const leaderSymbol = leaderCode ? `${leaderCode}${suffix}` : '600519.SS';
+
+            out.push({
+                code: String(item.f12 || ''),
+                name: rawName,
+                changePercent: Number(item.f3) || 0,
+                mainNetInflow: Number(item.f62) || 0,
+                mainNetRatio: Number(item.f184) || 0,
+                leaderName: String(item.f128 || '—'),
+                leaderSymbol,
+                leaderChangePercent: Number(item.f136) || 0,
+            });
+            if (out.length >= 6) break;
+        }
+        return out;
+    };
+
+    try {
+        const [gainRes, inflowRes] = await Promise.all([
+            fetch(
+                'http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=15&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50&fields=f12,f14,f2,f3,f62,f184,f128,f140,f141,f136',
+                { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 } }
+            ),
+            fetch(
+                'http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=15&po=1&np=1&fltt=2&invt=2&fid=f62&fs=m:90+t:2+f:!50&fields=f12,f14,f2,f3,f62,f184,f128,f140,f141,f136',
+                { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 } }
+            ),
+        ]);
+
+        const gainJson = gainRes.ok ? await gainRes.json() : null;
+        const inflowJson = inflowRes.ok ? await inflowRes.json() : null;
+
+        return {
+            topGainers: parseSectorList(gainJson?.data?.diff || []),
+            topInflows: parseSectorList(inflowJson?.data?.diff || []),
+        };
+    } catch (e) {
+        console.error('getChinaSectorRankings error', e);
+        return { topGainers: [], topInflows: [] };
     }
 }
 
