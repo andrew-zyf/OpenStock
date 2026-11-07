@@ -19,8 +19,15 @@ export type UnifiedQuote = {
     changePercent: number;
     volume: number;
     turnover?: number;
+    turnoverRate?: number;
+    amplitude?: number;
     marketCap?: number;
     pe?: number;
+    pb?: number;
+    limitUp?: number;
+    limitDown?: number;
+    outer?: number;
+    inner?: number;
     currency: string;
     exchange: string;
     market: MarketType;
@@ -44,6 +51,7 @@ export type ChartDataPoint = {
     high?: number;
     low?: number;
     volume?: number;
+    avgPrice?: number;
 };
 
 export type ChartPeriod = '1d' | '5d' | '1m' | '3m' | '1y' | '5y';
@@ -57,6 +65,14 @@ export type ChartSeries = {
     periodLow: number;
     latestPrice: number;
     prevClose?: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    volume?: number;
+    turnover?: number;
+    turnoverRate?: number;
+    amplitude?: number;
+    pe?: number;
     change: number;
     changePercent: number;
     currency: string;
@@ -243,6 +259,17 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
                             low = Number(parts[34]) || 0;
                         }
 
+                        const outer = Number(parts[7]) || 0;
+                        const inner = Number(parts[8]) || 0;
+                        const turnoverWan = Number(parts[37]) || 0;
+                        const turnoverRate = Number(parts[38]) || 0;
+                        const pe = Number(parts[39]) || undefined;
+                        const amplitude = Number(parts[43]) || (prevClose ? Number((((high - low) / prevClose) * 100).toFixed(2)) : 0);
+                        const pb = Number(parts[46]) || undefined;
+                        const limitUp = Number(parts[47]) || undefined;
+                        const limitDown = Number(parts[48]) || undefined;
+                        const volumeRatio = Number(parts[49]) || undefined;
+
                         const quote: UnifiedQuote = {
                             symbol: matched.original,
                             name,
@@ -254,9 +281,16 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
                             change: Number(change.toFixed(3)),
                             changePercent: Number(changePercent.toFixed(2)),
                             volume,
-                            turnover: Number(parts[37]) || 0,
+                            turnover: turnoverWan ? turnoverWan * 10000 : 0,
+                            turnoverRate,
+                            amplitude,
                             marketCap: Number(parts[44]) ? Number(parts[44]) * 100000000 : undefined,
-                            pe: Number(parts[39]) || undefined,
+                            pe,
+                            pb,
+                            limitUp,
+                            limitDown,
+                            outer,
+                            inner,
                             currency: matched.currency,
                             exchange: matched.exchange,
                             market: matched.market,
@@ -369,6 +403,7 @@ export async function fetchUnifiedChartSeries(
                 const opens: (number | null)[] = quoteObj?.open || [];
                 const highs: (number | null)[] = quoteObj?.high || [];
                 const lows: (number | null)[] = quoteObj?.low || [];
+                const volumes: (number | null)[] = quoteObj?.volume || [];
                 const metaData = result?.meta;
                 const prevClose = metaData?.chartPreviousClose || metaData?.previousClose;
 
@@ -385,9 +420,10 @@ export async function fetchUnifiedChartSeries(
                         time: timeStr,
                         date: dateStr,
                         close: Number(close.toFixed(2)),
-                        open: opens[i] ? Number(opens[i]!.toFixed(2)) : undefined,
-                        high: highs[i] ? Number(highs[i]!.toFixed(2)) : undefined,
-                        low: lows[i] ? Number(lows[i]!.toFixed(2)) : undefined,
+                        open: opens[i] != null && Number.isFinite(opens[i]) ? Number(opens[i]!.toFixed(2)) : Number(close.toFixed(2)),
+                        high: highs[i] != null && Number.isFinite(highs[i]) ? Number(highs[i]!.toFixed(2)) : Number(close.toFixed(2)),
+                        low: lows[i] != null && Number.isFinite(lows[i]) ? Number(lows[i]!.toFixed(2)) : Number(close.toFixed(2)),
+                        volume: volumes[i] != null && Number.isFinite(volumes[i]) ? Number(volumes[i]!) : 0,
                     });
                 }
 
@@ -432,14 +468,31 @@ export async function fetchUnifiedChartSeries(
                 if (!rawList.length) return null;
 
                 const points: ChartDataPoint[] = [];
+                let prevVol = 0;
                 for (const item of rawList) {
                     const parts = item.trim().split(' ');
                     if (parts.length < 2) continue;
                     const hhmm = parts[0];
                     const close = Number(parts[1]);
                     if (!close) continue;
+                    const cumVol = Number(parts[2]) || 0;
+                    const cumAmt = Number(parts[3]) || 0;
+                    const minVol = Math.max(0, cumVol - prevVol);
+                    prevVol = cumVol;
+
+                    // Calculate VWAP: amount / (volume * 100 for A-shares, volume for HK)
+                    const avgPrice = cumVol > 0 ? (meta.market === 'cn' ? cumAmt / (cumVol * 100) : cumAmt / cumVol) : close;
                     const formattedTime = `${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}`;
-                    points.push({ time: formattedTime, date: '今日', close });
+                    points.push({
+                        time: formattedTime,
+                        date: '今日',
+                        close,
+                        open: close,
+                        high: close,
+                        low: close,
+                        volume: minVol,
+                        avgPrice: Number(avgPrice.toFixed(2)),
+                    });
                 }
 
                 if (!points.length) return null;
@@ -491,8 +544,9 @@ export async function fetchUnifiedChartSeries(
                     const close = Number(candle[2]);
                     const high = Number(candle[3]);
                     const low = Number(candle[4]);
+                    const volume = Number(candle[5]) || 0;
                     if (!close) continue;
-                    points.push({ time: date, date, open, close, high, low });
+                    points.push({ time: date, date, open, close, high, low, volume });
                 }
 
                 if (!points.length) return null;
@@ -553,6 +607,8 @@ export async function fetchUnifiedChartSeries(
                     open: Number(data.o?.[i]) || close,
                     high: Number(data.h?.[i]) || close,
                     low: Number(data.l?.[i]) || close,
+                    volume: Number(data.v?.[i]) || 0,
+                    avgPrice: Number(data.vwap?.[i]) || close,
                 });
             }
 

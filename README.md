@@ -1,5 +1,3 @@
-
-
 <p align="center"><sub><a href="#sponsors">SPONSORED BY</a></sub></p>
 
 <p align="center">
@@ -10,52 +8,77 @@
   <a href="https://github.com/diip3sh/orbit"><picture><source media="(prefers-color-scheme: dark)" srcset="public/assets/icons/orbit.png"><img src="public/assets/icons/orbit-black.png" alt="" height="20"></picture></a> <a href="https://github.com/diip3sh/orbit"><b>Orbit</b></a>. Free, open-source macOS screen recorder, screenshot tool and video editor: auto-zoom, smooth cursor, backgrounds, web recordings and AI agent recording.
 </p>
 
-<p align="center">
- <a href="https://www.star-history.com/open-dev-society/openstock">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=rank&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=rank" /><img alt="Star History Rank" src="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=rank" /></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=trending&theme=dark" /><source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=trending" /><img alt="GitHub Trending Repository of the Day" src="https://api.star-history.com/badge?repo=Open-Dev-Society/OpenStock&type=trending" /></picture>
- </a>
-</p>
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/15728?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-15728" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/15728" alt="Open-Dev-Society%2FOpenStock | Trendshift" width="250" height="55"/></a>
-  <a href="https://trendshift.io/repositories/15728?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-15728" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/15728/daily?language=TypeScript" alt="Open-Dev-Society%2FOpenStock | Trendshift" width="250" height="55"/></a>
-  <a href="https://trendshift.io/repositories/15728?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-15728" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/15728/weekly?language=TypeScript" alt="Open-Dev-Society%2FOpenStock | Trendshift" width="250" height="55"/></a>
-  <a href="https://trendshift.io/repositories/15728?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-15728" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/15728/monthly?language=TypeScript" alt="Open-Dev-Society%2FOpenStock | Trendshift" width="250" height="55"/></a>
-
-</p>
 <div align="center">
   <br />
-  <a href="https://openstock-ods.vercel.app"><img src="./public/assets/images/dashboard.png" alt="OpenStock: the landing page with the market hours dial, index pulse and live charts" /></a>
+  <a href="https://github.com/andrew-zyf/OpenStock/tree/feat/chinese-market-enhancements"><img src="./public/assets/images/dashboard.png" alt="OpenStock: Chinese & Multi-Market Enhanced Edition" /></a>
   <br />
   <br />
 
-  **[Open OpenStock](https://openstock-ods.vercel.app)** · [Changelog](https://openstock-ods.vercel.app/changelog) · [Self-host it](#self-hosting) · [Sponsor](#sponsors) · [Discord](https://discord.gg/JkJ8kfxgxB)
+  **[OpenStock 中文与多市场重构分支](https://github.com/andrew-zyf/OpenStock/tree/feat/chinese-market-enhancements)** · [Upstream Repo](https://github.com/Open-Dev-Society/OpenStock) · [快速自建](#quick-start) · [功能特性](#features) · [数据源架构](#data--integrations)
 
   <br />
 
   <div>
-    <a href="https://github.com/Open-Dev-Society/OpenStock/releases/latest"><img src="https://img.shields.io/github/v/release/Open-Dev-Society/OpenStock?style=for-the-badge&label=release&color=30B27A" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/-Next.js-black?style=for-the-badge&logoColor=white&logo=next.js&color=000000" alt="Next.js badge" />
+    <img src="https://img.shields.io/badge/Market-US%20%7C%20CN%20%7C%20HK%20%7C%20TW-red?style=for-the-badge&logoColor=white" alt="Multi-Market badge" />
+    <img src="https://img.shields.io/badge/Level--1-Native%20Zero--Delay-emerald?style=for-the-badge&logoColor=white" alt="Zero Delay Quotes" />
+    <img src="https://img.shields.io/badge/Charts-Candlesticks%20%2B%20VOL%20%2B%20MA-blue?style=for-the-badge&logoColor=white" alt="Candlesticks & Volume" />
+    <img src="https://img.shields.io/badge/-Next.js%2015-black?style=for-the-badge&logoColor=white&logo=next.js&color=000000" alt="Next.js badge" />
     <img src="https://img.shields.io/badge/-TypeScript-black?style=for-the-badge&logoColor=white&logo=typescript&color=3178C6"/>
     <img src="https://img.shields.io/badge/-Tailwind%20CSS-black?style=for-the-badge&logoColor=white&logo=tailwindcss&color=38B2AC"/>
-    <img src="https://img.shields.io/badge/-shadcn/ui-black?style=for-the-badge&logoColor=white&logo=shadcnui&color=000000"/>
     <img src="https://img.shields.io/badge/-Better%20Auth-black?style=for-the-badge&logoColor=white&logo=betterauth&color=000000"/>
     <img src="https://img.shields.io/badge/-MongoDB-black?style=for-the-badge&logoColor=white&logo=mongodb&color=00A35C"/>
-    <img src="https://img.shields.io/badge/-Inngest-black?style=for-the-badge&logoColor=white&logo=inngest&color=000000"/>
-    <img src="https://img.shields.io/badge/-TradingView-black?style=for-the-badge&logoColor=white&logo=tradingview&color=2962FF"/>
-    <img src="https://img.shields.io/badge/-Finnhub-black?style=for-the-badge&logoColor=white&color=30B27A"/>
-    <img src="https://img.shields.io/badge/-Docker-black?style=for-the-badge&logoColor=white&logo=docker&color=2496ED"/>
   </div>
 </div>
 
-# OpenStock
+# OpenStock (Chinese & Multi-Market Enhanced Edition)
+### 中文与多市场深度重构版 · 专为大中华区与跨境资深投资者打造
 
-**Markets, minus the paywall.** OpenStock is a free, open-source alternative to expensive market platforms: track prices, watch the whole market and dig into company insights. Use it at [openstock-ods.vercel.app](https://openstock-ods.vercel.app), or run your own copy with every feature.
+**Markets, minus the paywall.** 原版 OpenStock 是一款出色的开源金融平台，但对于大中华区（中国 A 股、港股、台股）及跨市场资深投资者而言，原版存在 TradingView 频繁弹窗阻断（"登录或注册以获取数据"）、无法内嵌台股柜买中心（TPEX）与 A 股图表、点击资产跳转第三方商业网站、缺乏 1 分钟分时图与成交量副图等核心痛点。
 
-> ❤️ **13,000+ people use OpenStock for free.** Help keep it that way: [sponsor from $5 a month](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=recurring&amount=5), or read [how OpenStock is funded](#sponsors).
+本分支（`feat/chinese-market-enhancements`）立足**中国资深玩家与雪球/同花顺/富途牛牛专业操作习惯**，进行了系统性的底层数据信源直连与前端交互全面重构：
 
-> [!NOTE]
-> OpenStock is community-built and not a brokerage. Market data may be delayed depending on the provider and your setup. Nothing here is financial advice.
+---
+
+## 🌟 本分支核心重构特性 (Key Highlights)
+
+### 1. ⚡️ 原生 Level-1 零延迟直连行情引擎（彻底摆脱第三方登录墙）
+* **中国 A 股 (上交所 SSE / 深交所 SZSE / 北交所 BSE)**：直连官方授权高频 GTK 行情流，GBK 实时解码，毫秒级响应上万只沪深股票与宽基指数。
+* **中国香港 (港交所 HKEX)**：直连官方授权高频流（`r_hk` 协议），即时揭示港股蓝筹与科网龙头盘口。
+* **中国台湾 (台交所 TWSE / 柜买中心 TPEX)**：直连台湾证券交易所官方 MIS API (`mis.twse.com.tw`)，零延迟实时揭示加权指数、柜买指数、台积电、联发科等标的，彻底解决原版 TPEX 被禁封报错的问题。
+* **美股 (Nasdaq / NYSE / AMEX)**：整合 Yahoo Finance 1 分钟高频盘中流与 Finnhub 实时数据。
+
+### 2. 🕯 经典专业蜡烛线 (Candlesticks) + 移动平均线 (MA5/10/20) + VOL 成交量副图
+* **标准专业蜡烛图**：日K、季K、周K、月K 全面采用标准蜡烛线（K 线实体 + 上下影线），取代原先单薄的平滑波形线。
+* **经典均线系统**：叠加 **MA5（黄，进攻线）**、**MA10（紫，操盘线）**、**MA20（蓝，生命线）** 三条核心均线，顶部指标栏随十字准星实时联动。
+* **1 分钟分时走势图 (Intraday 1d)**：
+  - **白色价格曲线**：盘中即时逐笔成交价走势。
+  - **黄色分时均价线 (VWAP)**：基于 `累计成交金额 / 累计成交量` 严格计算，精准确认日内多空博弈强弱。
+  - **昨收基准参考虚线**：中间对齐上一交易日收盘价，右侧对齐 `0.00%` 坐标基准。
+* **独立成交量副图 (VOL Subchart)**：
+  - 位于主图下方，每分钟与每日成交量独立成柱，红涨绿跌对齐主图色彩。
+  - 实时显示成交量数值（如 `4.28万手`、`62.00亿元`、`44.70M`）。
+* **常规盘口与关键数据栏**：
+  - 顶部指标栏实时揭示：**今开、昨收、最高、最低、收盘、涨跌额、涨跌幅、日内振幅、成交量、成交额、换手率**。
+* **多模式一键切换**：支持在「蜡烛 K 线」与「分时走势」之间自由一键切换。
+
+### 3. 🏂 雪球风格四大市场联动概览 (`/dashboard`)
+* **跨市场核心联动速览条 (`CrossMarketBar`)**：
+  - 顶部常驻标普 500 (`SPY`)、上证指数 (`000001.SS`)、恒生指数 (`2800.HK`)、元大台湾 50 (`0050.TW`)。
+  - 实时反映全球与大中华资金流动情绪，点击任意指数直接在站内展开详情。
+* **100% 站内本地闭环导航**：
+  - 概览中所有指数卡片、异动股票、精选蓝筹报价，点击直接导航至 OpenStock 站内本地 `/stocks/[symbol]` 详情，**绝不外跳到第三方商业网页**。
+* **原生异动领跑与精选报价**：
+  - 完全替换 TradingView iframe，原生渲染四大市场核心板块龙头与涨跌振幅排名。
+* **大盘情绪与宏观风向标**：
+  - 实时监控两市成交总额、放量/缩量状态、离岸人民币 (`USD/CNH`) 汇率与 7x24 中文财经滚动快讯。
+
+### 4. ⭐️ 专业多市场自选股体系 (`/watchlist`)
+* **多市场分类 Tab 过滤**：支持「全部」、「美股」、「A股」、「港股」、「台股」一键切换，并带实时自选股票数量角标。
+* **多维度表头自由排序**：支持按最新价、今日涨跌幅（%、金额）、总市值自由升降序排列。
+* **代码搜索与热门标的加入**：覆盖贵州茅台、宁德时代、腾讯控股、台积电、苹果、英伟达等全球核心龙头。
+* **红涨绿跌 / 绿涨红跌一键切换**：适配中国内地（红涨绿跌）与国际市场（绿涨红跌）两种配色习惯。
+
+---
 
 ## 📋 Table of Contents
 
@@ -64,356 +87,191 @@
 3. ⚙️ [Tech stack](#tech-stack)
 4. 🤸 [Quick start](#quick-start)
 5. 🔐 [Environment variables](#environment-variables)
-6. 🐳 [Self-hosting](#self-hosting): Docker, prebuilt image, one-click deploys, Vercel
+6. 🐳 [Self-hosting](#self-hosting)
 7. 🧱 [Project structure](#project-structure)
 8. 📡 [How it works](#data--integrations)
 9. 🌍 [Market support](#market-support)
 10. 🧪 [Scripts and tests](#scripts--tooling)
 11. 🤝 [Contributing](#contributing)
-12. 🏆 [Contributors](#contributors)
-13. 🛡️ [Security](#security)
-14. 📜 [License](#license)
-15. 🌱 [Open Dev Society manifesto](#manifesto)
-16. 🙏 [Acknowledgements](#acknowledgements)
-17. ❤️ [Sponsor OpenStock](#sponsors)
+12. 📜 [License](#license)
+
+---
 
 ## 🔋 Features <a name="features"></a>
 
-**Markets**
-- A dashboard for eight markets: US, India, Germany, Canada, Australia, Saudi Arabia, Crypto and Forex, with an index pulse, a sector heatmap, market leaders and top stories.
-- Search every exchange Finnhub covers with **⌘K**, and keep stocks open as browser-style tabs.
+**Multi-Market Coverage**
+- Dedicated market coverage for **US (美股)**, **China A-Shares (A股)**, **Hong Kong (港股)**, and **Taiwan (台股)**, plus Crypto, Forex, India, Canada, Germany, Australia, and Saudi Arabia.
+- Cross-market headline pulse bar monitoring SPY, SSE Composite, Hang Seng, and Yuanta Taiwan 50 simultaneously.
+- 100% local in-app navigation: clicking any asset navigates to local route `/stocks/[symbol]` without third-party redirects.
 
-**Stock pages**
-- TradingView candles with drawing tools (trend lines, Fibonacci, shapes, text) and fullscreen.
-- Pick indicators once (SMA, EMA, Bollinger Bands, VWAP, RSI, MACD, Stochastic, ATR) and they stay on every chart.
-- Financials, technicals and the company profile.
-- Sentiment from Reddit, X, news and Polymarket (with an Adanos key).
+**Professional Candlestick & Chart Engine**
+- Native SVG candlestick charts (`日K`, `季K`, `周K`, `月K`) with candle bodies, wicks, and dynamic MA5 / MA10 / MA20 overlays.
+- Native 1-minute intraday time-sharing (`分时` / 1d) with white price line, yellow VWAP average price line, and previous close baseline.
+- Dedicated Volume Subchart (`VOL`) displaying per-period volume bars with red-up/green-down semantics.
+- Comprehensive top indicators: Open, High, Low, Close, Change %, Amplitude %, Volume, Turnover, and MAs.
 
-**Watchlist and alerts**
-- A watchlist of up to 50 stocks, saved to your account.
-- Price alerts above or below a target, checked every 5 minutes and emailed to you (in realtime mode).
-- A weekly, AI-written news digest by email every Monday.
+**Xueqiu-Style Watchlist**
+- Multi-market tabbed categorization: `全部`, `美股`, `A股`, `港股`, `台股` with live count badges.
+- Sortable table columns by Price, Day Change %, and Market Cap.
+- 15-second background auto-polling for real-time portfolio tracking.
 
-**Accounts**
-- Email and password, plus Google and GitHub sign-in when configured; password reset and a profile page.
-- Rate-limited sign-in, sign-up and password reset; resetting your password signs out your other devices.
+**Macros & Sentiment**
+- Two-market total turnover tracking, USD/CNH live exchange rate, and 7x24 Chinese financial news flash.
+- Social sentiment analysis from Reddit, X, news, and Polymarket (via Adanos).
 
-**Community**
-- A [changelog](https://openstock-ods.vercel.app/changelog) that credits everyone who contributed, a [Wall of love](https://openstock-ods.vercel.app/love), and an update banner in the app.
+---
 
 ## ⏱️ How fresh is the data <a name="data-freshness"></a>
 
-Charts always stream live from TradingView. Quotes, watchlist prices and alerts come from Finnhub:
-
-| | Quotes | Price alerts | Cost |
+| Market | Data Provider | Protocol / Frequency | Delay / Cost |
 |---|---|---|---|
-| **Community**: [openstock-ods.vercel.app](https://openstock-ods.vercel.app) | Every hour, shared by everyone | No | Free |
-| **OpenStock Cloud** (coming soon) | Every 15 seconds | By email | $5 a month |
-| **Self-hosted** | Every hour, or every 15 seconds with `NEXT_PUBLIC_OPENSTOCK_DATA_MODE=realtime` and your own Finnhub keys | By email, in realtime mode | Free |
+| **中国 A 股 (SSE / SZSE)** | Tencent GTK Level-1 | High-frequency GBK Stream (15s auto-polling) | **0 延迟 · 原生免费** |
+| **中国香港 (HKEX)** | Tencent GTK Official Stream | High-frequency `r_hk` Stream | **0 延迟 · 原生免费** |
+| **中国台湾 (TWSE / TPEX)** | Taiwan Stock Exchange Official MIS API | JSON REST Stream (`mis.twse.com.tw`) | **0 延迟 · 原生免费** |
+| **美股 (Nasdaq / NYSE)** | Yahoo Finance Chart + Finnhub | 1-minute Intraday + Level-1 Quotes | **0 延迟 · 实时流** |
+| **全球指数与宏观汇率** | Tencent / TWSE / Yahoo / BOC | Cross-market pulse & exchange rates | **15s 自动刷新** |
+
+---
 
 ## ⚙️ Tech stack <a name="tech-stack"></a>
 
-| | |
+| Layer | Technologies |
 |---|---|
-| App | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui and Radix |
-| Accounts and data | Better Auth, MongoDB with Mongoose |
-| Market data | Finnhub, TradingView widgets, Adanos (sentiment) |
-| Background jobs | Inngest |
-| Email | Nodemailer (Gmail), Kit for the newsletter |
-| AI | Gemini, MiniMax or Siray |
-| Hosting | Vercel; a Docker image on GitHub Container Registry for self-hosting |
+| Frontend | Next.js 15 (Turbopack, App Router), React 19, TypeScript, Tailwind CSS v4, Lucide Icons, shadcn/ui |
+| Charting | Native SVG Candlestick & Time-Sharing Engine (`YahooStockChart`), Volume Subchart, MA Engine |
+| Accounts & Auth | Better Auth, MongoDB with Mongoose |
+| Market Feeds | Tencent GTK Level-1 (CN/HK), Taiwan TWSE MIS (TW), Yahoo Finance (US/Intraday), Finnhub (US/Global), cnYES |
+| Background Jobs | Inngest (Weekly digest, price alerts) |
+| Email & AI | Nodemailer (Gmail), Gemini / MiniMax / Siray |
+
+---
 
 ## 🤸 Quick start <a name="quick-start"></a>
 
-You need Node.js 22 LTS, a MongoDB database (a free Atlas cluster, or the [Docker setup](#docker-setup)) and a free [Finnhub](https://finnhub.io) key.
+### 环境要求
+- Node.js 22 LTS
+- MongoDB (本地 Docker 实例，或免费 MongoDB Atlas 集群)
+- (可选) 免费 [Finnhub](https://finnhub.io) API Key (用于美股基础数据与价格预警)
 
+### 本地运行
 ```bash
-git clone https://github.com/Open-Dev-Society/OpenStock.git
+# 1. 克隆本重构分支代码
+git clone -b feat/chinese-market-enhancements https://github.com/andrew-zyf/OpenStock.git
 cd OpenStock
+
+# 2. 安装项目依赖
 npm ci
-cp .env.example .env         # fill in MONGODB_URI, BETTER_AUTH_SECRET and FINNHUB_API_KEY
-node scripts/check-env.mjs   # checks your .env
-npm run test:db              # checks the MongoDB connection
-npm run dev                  # http://localhost:3000
+
+# 3. 配置环境变量
+cp .env.example .env
+# 填写 MONGODB_URI、BETTER_AUTH_SECRET 和 FINNHUB_API_KEY
+
+# 4. 校验环境与数据库连接
+node scripts/check-env.mjs
+npm run test:db
+
+# 5. 启动本地开发服务 (默认端口 3000)
+npm run dev
+
+# 或编译生产版本并在本地端口 3080 运行
+npm run build
+PORT=3080 npm start
 ```
 
-Welcome emails, price alerts and the weekly digest run as [Inngest](https://www.inngest.com) jobs. Locally, start Inngest's dev server alongside the app: `npx inngest-cli@latest dev`.
-
-For production: `npm run build && npm start`.
+---
 
 ## 🔐 Environment variables <a name="environment-variables"></a>
 
-Every variable is listed with comments in [`.env.example`](.env.example). The ones that matter:
+每个变量均在 [`.env.example`](.env.example) 中有详细注释。核心关键变量：
 
 | Variable | Needed | What it's for |
 |---|---|---|
-| `MONGODB_URI` | Yes | Your MongoDB database |
-| `BETTER_AUTH_SECRET` | Yes | Signs sessions. Generate it with `openssl rand -hex 32`. Auth refuses to run in production without it |
-| `BETTER_AUTH_URL` | Yes | The app's public URL, used for auth callbacks and links in emails |
-| `FINNHUB_API_KEY` | Yes | Market data. Or put several free keys, comma-separated, in `FINNHUB_API_KEYS`: they're rotated, and each adds 60 requests a minute |
-| `NEXT_PUBLIC_OPENSTOCK_DATA_MODE` | No | `cached` (hourly, the default) or `realtime` (every 15 seconds, with price alerts). Fixed when the app is built: rebuild after changing it |
-| `INNGEST_SIGNING_KEY`, `INNGEST_EVENT_KEY` | In production | Background jobs: welcome emails, price alerts and the weekly digest |
-| `NODEMAILER_EMAIL`, `NODEMAILER_PASSWORD` | No | Sending email through Gmail, with an app password. Without them, emails are skipped |
-| `GEMINI_API_KEY` (or MiniMax or Siray) | No | AI-written welcome emails and the news digest |
-| `ADANOS_API_KEY` | No | The sentiment card on stock pages |
-| `KIT_API_KEY`, `KIT_API_SECRET`, `KIT_WELCOME_FORM_ID` | No | The weekly digest newsletter in Kit |
-| `GOOGLE_CLIENT_ID` / `_SECRET`, `GITHUB_CLIENT_ID` / `_SECRET` | No | Social sign-in. Callbacks: `<BETTER_AUTH_URL>/api/auth/callback/google` and `/github` |
+| `MONGODB_URI` | Yes | MongoDB 数据库连接串 |
+| `BETTER_AUTH_SECRET` | Yes | 会话签名密钥。可通过 `openssl rand -hex 32` 生成 |
+| `BETTER_AUTH_URL` | Yes | 平台的公开访问 URL（本地如 `http://localhost:3080`） |
+| `FINNHUB_API_KEY` | Optional | Finnhub 基础数据 Key（A股/港股/台股均使用直连数据，无需 Finnhub 消耗） |
+| `NEXT_PUBLIC_OPENSTOCK_DATA_MODE` | No | `realtime` (高频实时轮询) 或 `cached` |
+| `GEMINI_API_KEY` | No | AI 生成的欢迎邮件与新闻简报 |
 
-`NEXT_PUBLIC_FINNHUB_API_KEY` still works as a name for the Finnhub key. No key is ever sent to the browser.
+---
 
 ## 🐳 Self-hosting <a name="self-hosting"></a>
 
-### Docker Compose <a name="docker-setup"></a>
+### Docker Compose 一键启动
+```bash
+# 构建并后台运行 OpenStock 与 MongoDB 容器
+docker compose up -d --build
 
-Runs OpenStock and MongoDB together. MongoDB is only reachable inside the Docker network; it isn't published on your machine.
-
-1. Fill in `.env` (see above). For the bundled database, choose a password and use it in both places. Letters and digits are simplest; `@ : / ? #` must be percent-encoded in the URI.
-   ```env
-   MONGO_ROOT_PASSWORD=change-me
-   MONGODB_URI=mongodb://root:change-me@mongodb:27017/openstock?authSource=admin
-   ```
-2. Start it: `docker compose up -d --build`
-3. Open http://localhost:3000
-
-The image build needs no secrets: every variable is read when the container starts, except `NEXT_PUBLIC_OPENSTOCK_DATA_MODE`, which Compose passes to the build from `.env`. Data lives in the `mongo-data` volume, and the MongoDB password is only applied when that volume is first created.
-
-### Prebuilt image
-
-Every push to `main` publishes `ghcr.io/open-dev-society/openstock` for amd64 and arm64, tagged `latest`, `sha-<commit>`, and a version for each release (for example `2026.10.18`). To use it, replace `build:` under `openstock` in `docker-compose.yml` with:
-
-```yaml
-    image: ghcr.io/open-dev-society/openstock:latest
+# 访问平台
+open http://localhost:3000
 ```
 
-then run `docker compose pull && docker compose up -d`. The prebuilt image runs in cached mode; build it yourself for realtime.
+### macOS LaunchAgent 生产守护进程配置 (`az-service-openstock`)
+在 macOS 上作为自启动后台常驻服务运行时，创建 `~/Library/LaunchAgents/com.user.az-service-openstock.plist`：
+```bash
+launchctl load ~/Library/LaunchAgents/com.user.az-service-openstock.plist
+launchctl kickstart -k gui/$(id -u)/com.user.az-service-openstock
+```
 
-### One-click deploys
-
-[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/OpenStock/)
-[![Deploy to ZopDay](https://zop.dev/deploytozopday-inkhard.svg)](https://zop.dev/zopday/app/deploy?repo=https://github.com/Open-Dev-Society/OpenStock&port=3000&name=openstock&utm_source=github&utm_medium=one_click&utm_content=openstock)
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openstock-1?utm_medium=integration&utm_source=template&utm_campaign=generic)
-
-### Railway <a name="deploy-on-railway"></a>
-
-OpenStock ships a [`railway.json`](railway.json) that builds the `Dockerfile`, checks health on `/sign-in` and restarts on failure. The template above sets everything up; to do it by hand:
-
-1. Create a project and add a **MongoDB** database (`+ New → Database → MongoDB`).
-2. Add a service from this repository (`+ New → GitHub Repo`).
-3. In the service's **Variables**, set:
-   ```env
-   MONGODB_URI=${{MongoDB.MONGO_URL}}
-   BETTER_AUTH_SECRET=${{secret(32)}}
-   BETTER_AUTH_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}
-   FINNHUB_API_KEY=your_finnhub_key
-   GEMINI_API_KEY=your_gemini_api_key
-   INNGEST_SIGNING_KEY=your_inngest_signing_key
-   INNGEST_EVENT_KEY=your_inngest_event_key
-   NODEMAILER_EMAIL=youraddress@gmail.com
-   NODEMAILER_PASSWORD=your_gmail_app_password
-   ```
-4. Under **Settings → Networking**, generate a public domain and redeploy.
-
-For background jobs, add your Railway domain as an app in the [Inngest dashboard](https://app.inngest.com), pointing to `https://<your-domain>/api/inngest`. To turn on realtime mode, also set `NEXT_PUBLIC_OPENSTOCK_DATA_MODE=realtime`; Railway passes it to the build.
-
-### Vercel
-
-Import the repository, set the variables above for Production, and connect Inngest (its Vercel integration sets both keys). [`vercel.json`](vercel.json) pins functions to Mumbai (`bom1`), next to the hosted database; change it to the region nearest yours.
+---
 
 ## 🧱 Project structure <a name="project-structure"></a>
 
 ```
 app/
-  (marketing)/    public pages: landing, about, help, api-docs, sponsor, love, changelog, terms, /s/[ticker], /compare
-  (auth)/         sign-in, sign-up, forgot-password, reset-password
-  (root)/         the signed-in app: dashboard, watchlist, stocks/[symbol], profile
-  api/            auth/[...all] (Better Auth), inngest (background jobs), quotes (live prices)
-components/       shell/ (sidebar, tabs), stocks/, watchlist/, landing/, marketing/, sponsors/, forms/, ui/ (shadcn)
-database/         MongoDB connection and models (watchlist, alert)
+  (auth)/         用户认证：登录、注册、找回密码
+  (root)/
+    dashboard/    雪球风格市场概览（四地联动条、异动领跑、精选报价、宏观快讯）
+    watchlist/    专业自选股（美股/A股/港股/台股分类 Tab、多列排序）
+    stocks/[symbol]/ 股票详情页（原生蜡烛K线、分时图、盘口指标、财务与技术分析）
+    profile/      个人资料与红涨绿跌配色偏好
+components/
+  CrossMarketBar.tsx    四地市场（美股/A股/港股/台股）跨市场速览条
+  NativeMarketQuotes.tsx 原生异动领跑与精选报价组件（100% 站内本地导航）
+  ChinaMarketMacroBar.tsx 大中华宏观风向标（两市成交总额、汇率与四地监控）
+  ChineseNewsFlash.tsx   7x24 中文财经快讯
+  stocks/
+    YahooStockChart.tsx  原生专业蜡烛K线、分时走势、MA5/10/20 与 VOL 副图
+    StockHeader.tsx      开高低收、换手率、振幅、成交量、成交额、市盈率指标栏
+  watchlist/
+    WatchlistTable.tsx   雪球式分类与排序自选股列表
 lib/
-  actions/        server actions: auth, profile, watchlist, alerts, Finnhub, sentiment
-  better-auth/    auth setup (connects to MongoDB on first use, so builds need no database)
-  inngest/        background jobs and AI prompts
-  nodemailer/     email sending and templates
-  markets.ts      the dashboard's markets            market-data.ts   cached vs realtime
-  changelog.ts    releases and contributor credits   sponsors.ts      sponsors and tiers
-  rate-limit.ts   MongoDB-backed limits for auth and live quotes
-middleware.ts     public marketing, /s and /compare pages; app pages redirect to sign-in
-scripts/          check-env.mjs, test-db.mjs, and one-off maintenance scripts
-__tests__/        Vitest tests
+  realtime-market.ts     四地 Level-1 零延迟行情与分时/蜡烛线统一解析引擎
+  markets.ts             市场配置与核心宽基指数定义
+  utils.ts               货币、大写代码、格式化与国际股票识别工具
 ```
+
+---
 
 ## 📡 How it works <a name="data--integrations"></a>
 
-- **Finnhub**: search, quotes, company profiles and news. Responses are cached and shared (for an hour, or 15 seconds in realtime mode), with timeouts and a key pool, so a slow upstream never hangs a page.
-- **TradingView**: the chart, heatmap, financials, technicals and profile widgets.
-- **Adanos** (optional): the sentiment card.
-- **Better Auth with MongoDB**: accounts and sessions. Pages and server actions check the session on the server; the middleware only redirects signed-out visitors.
-- **Inngest** runs the background jobs:
+```mermaid
+graph TD
+    A[用户访问客户端] --> B{请求标的市场识别}
+    B -->|中国 A 股| C[Tencent GTK Level-1 API]
+    B -->|中国香港 港股| D[Tencent GTK r_hk API]
+    B -->|中国台湾 台股| E[TWSE / TPEX MIS Official API]
+    B -->|美股 / 全球| F[Yahoo Finance + Finnhub]
+    
+    C --> G[GBK 实时解码 & VWAP 计算]
+    D --> G
+    E --> H[TWSE MIS 实时数据提取]
+    F --> I[Yahoo 1-min Intraday & Candles]
+    
+    G --> J[UnifiedQuote & ChartSeries Engine]
+    H --> J
+    I --> J
+    
+    J --> K[YahooStockChart: 蜡烛线 + MA + VOL]
+    J --> L[StockHeader: 开高低收换手率盘口]
+    J --> M[Watchlist: 分类实时自选列表]
+    J --> N[Dashboard: 跨市场联动速览]
+```
 
-  | Job | When |
-  |---|---|
-  | AI-personalised welcome email | On sign-up |
-  | Price alert check | Every 5 minutes, in realtime mode |
-  | Weekly news digest (a Kit broadcast) | Mondays at 09:00 UTC |
-
-- **Email**: Nodemailer (Gmail) sends welcome, alert and password-reset emails; Kit sends the weekly digest.
-
-## 🌍 Market support <a name="market-support"></a>
-
-| Market | Charts (TradingView embeds) | Quotes, watchlist prices, alerts (Finnhub free) |
-|---|---|---|
-| 🇺🇸 United States | Live | Yes |
-| Crypto (Binance pairs) | Live | Yes |
-| Forex | Live | No |
-| 🇨🇦 Canada, 🇦🇺 Australia | Delayed | No |
-| 🇸🇦 Saudi Arabia (Tadawul) | Blocked; delayed Yahoo Finance quotes instead | No |
-| 🇮🇳 India (BSE; `.NS` symbols chart on BSE), 🇩🇪 Germany | End of day | No |
-| London, Tokyo, Hong Kong, Korea and others | Candles blocked; financials, technicals and profile work | No |
-
-The full table, and why some markets are limited, is in [MARKET_SUPPORT.md](MARKET_SUPPORT.md).
-
-## 🧪 Scripts and tests <a name="scripts--tooling"></a>
-
-| Command | What it does |
-|---|---|
-| `npm run dev` | Development server (Turbopack) |
-| `npm run build`, `npm start` | Production build and server |
-| `npm test` | Vitest tests (`npm run test:watch` to keep watching) |
-| `npm run lint` | ESLint |
-| `npx tsc --noEmit` | Type check. Builds skip type errors, so run this before opening a PR |
-| `npm run test:db` | Checks the MongoDB connection |
-| `node scripts/check-env.mjs` | Checks your `.env` |
-
-## 🤝 Contributing <a name="contributing"></a>
-
-You belong here. Whether you're a student, a self-taught dev or a seasoned engineer, contributions are welcome.
-
-1. Pick a [good first issue](https://github.com/Open-Dev-Society/OpenStock/issues?q=is%3Aopen+label%3A%22good+first+issue%22), or open an issue to talk about an idea or a bug first.
-2. Fork the repo, branch from `main`, then `npm ci` and `cp .env.example .env`.
-3. Keep the pull request focused: a test for new logic, a screenshot for UI changes.
-4. Before you open it, run `npm test`, `npx tsc --noEmit` and `npm run lint`.
-
-Every merged pull request, and every issue that leads to a fix, is credited on the [changelog](https://openstock-ods.vercel.app/changelog) and below. Be kind, guide beginners, no gatekeeping: that's the Open Dev Society way. Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## 🏆 Contributors <a name="contributors"></a>
-
-OpenStock is built by everyone below: the people who wrote the code and the people whose issues led to a fix. Every release, and who made it happen, is on the [changelog](https://openstock-ods.vercel.app/changelog#contributors).
-
-[@ravixalgorithm](https://github.com/ravixalgorithm) founded and maintains OpenStock, and built it from the ground up: authentication, UI design, API and AI integration, and deployment.
-
-<!-- Generated from the credits in lib/changelog.ts: update both together. -->
-<table>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/ravixalgorithm"><img src="https://github.com/ravixalgorithm.png?size=96" width="56" height="56" alt="ravixalgorithm"/><br/><sub><b>ravixalgorithm</b></sub></a><br/><sub>Maintainer · 36 PRs</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/keshav-005"><img src="https://github.com/keshav-005.png?size=96" width="56" height="56" alt="keshav-005"/><br/><sub><b>keshav-005</b></sub></a><br/><sub>7 PRs</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/akoweicollinxx"><img src="https://github.com/akoweicollinxx.png?size=96" width="56" height="56" alt="akoweicollinxx"/><br/><sub><b>akoweicollinxx</b></sub></a><br/><sub>2 PRs</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/octo-patch"><img src="https://github.com/octo-patch.png?size=96" width="56" height="56" alt="octo-patch"/><br/><sub><b>octo-patch</b></sub></a><br/><sub>2 PRs</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/ahmaddirar-ios"><img src="https://github.com/ahmaddirar-ios.png?size=96" width="56" height="56" alt="ahmaddirar-ios"/><br/><sub><b>ahmaddirar-ios</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/alexander-schneider"><img src="https://github.com/alexander-schneider.png?size=96" width="56" height="56" alt="alexander-schneider"/><br/><sub><b>alexander-schneider</b></sub></a><br/><sub>1 PR</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/BambaSatoru"><img src="https://github.com/BambaSatoru.png?size=96" width="56" height="56" alt="BambaSatoru"/><br/><sub><b>BambaSatoru</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/Bortlesboat"><img src="https://github.com/Bortlesboat.png?size=96" width="56" height="56" alt="Bortlesboat"/><br/><sub><b>Bortlesboat</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/chinnsenn"><img src="https://github.com/chinnsenn.png?size=96" width="56" height="56" alt="chinnsenn"/><br/><sub><b>chinnsenn</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/Chukwuebuka-2003"><img src="https://github.com/Chukwuebuka-2003.png?size=96" width="56" height="56" alt="Chukwuebuka-2003"/><br/><sub><b>Chukwuebuka-2003</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/cosark"><img src="https://github.com/cosark.png?size=96" width="56" height="56" alt="cosark"/><br/><sub><b>cosark</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/cosmind-rusu"><img src="https://github.com/cosmind-rusu.png?size=96" width="56" height="56" alt="cosmind-rusu"/><br/><sub><b>cosmind-rusu</b></sub></a><br/><sub>1 PR</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/CrixusWen"><img src="https://github.com/CrixusWen.png?size=96" width="56" height="56" alt="CrixusWen"/><br/><sub><b>CrixusWen</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/ettoreciolli"><img src="https://github.com/ettoreciolli.png?size=96" width="56" height="56" alt="ettoreciolli"/><br/><sub><b>ettoreciolli</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/fuxicodex"><img src="https://github.com/fuxicodex.png?size=96" width="56" height="56" alt="fuxicodex"/><br/><sub><b>fuxicodex</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/kuishou68"><img src="https://github.com/kuishou68.png?size=96" width="56" height="56" alt="kuishou68"/><br/><sub><b>kuishou68</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/Mubashirrrr"><img src="https://github.com/Mubashirrrr.png?size=96" width="56" height="56" alt="Mubashirrrr"/><br/><sub><b>Mubashirrrr</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/muskanbandta23"><img src="https://github.com/muskanbandta23.png?size=96" width="56" height="56" alt="muskanbandta23"/><br/><sub><b>muskanbandta23</b></sub></a><br/><sub>1 PR</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/nb-src"><img src="https://github.com/nb-src.png?size=96" width="56" height="56" alt="nb-src"/><br/><sub><b>nb-src</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/NicolasBohn"><img src="https://github.com/NicolasBohn.png?size=96" width="56" height="56" alt="NicolasBohn"/><br/><sub><b>NicolasBohn</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/TPTBusiness"><img src="https://github.com/TPTBusiness.png?size=96" width="56" height="56" alt="TPTBusiness"/><br/><sub><b>TPTBusiness</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/Yi-111-a"><img src="https://github.com/Yi-111-a.png?size=96" width="56" height="56" alt="Yi-111-a"/><br/><sub><b>Yi-111-a</b></sub></a><br/><sub>1 PR</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/nexitpl"><img src="https://github.com/nexitpl.png?size=96" width="56" height="56" alt="nexitpl"/><br/><sub><b>nexitpl</b></sub></a><br/><sub>6 issues</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/a-lacruz"><img src="https://github.com/a-lacruz.png?size=96" width="56" height="56" alt="a-lacruz"/><br/><sub><b>a-lacruz</b></sub></a><br/><sub>1 issue</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/aaronwork1205"><img src="https://github.com/aaronwork1205.png?size=96" width="56" height="56" alt="aaronwork1205"/><br/><sub><b>aaronwork1205</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/brainistry10"><img src="https://github.com/brainistry10.png?size=96" width="56" height="56" alt="brainistry10"/><br/><sub><b>brainistry10</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/cn-zeus-jp"><img src="https://github.com/cn-zeus-jp.png?size=96" width="56" height="56" alt="cn-zeus-jp"/><br/><sub><b>cn-zeus-jp</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/danieldanielecki"><img src="https://github.com/danieldanielecki.png?size=96" width="56" height="56" alt="danieldanielecki"/><br/><sub><b>danieldanielecki</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/Greatz08"><img src="https://github.com/Greatz08.png?size=96" width="56" height="56" alt="Greatz08"/><br/><sub><b>Greatz08</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/juipeter-pixel"><img src="https://github.com/juipeter-pixel.png?size=96" width="56" height="56" alt="juipeter-pixel"/><br/><sub><b>juipeter-pixel</b></sub></a><br/><sub>1 issue</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/k2alzhang"><img src="https://github.com/k2alzhang.png?size=96" width="56" height="56" alt="k2alzhang"/><br/><sub><b>k2alzhang</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/khajaG321"><img src="https://github.com/khajaG321.png?size=96" width="56" height="56" alt="khajaG321"/><br/><sub><b>khajaG321</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/maplelaef0320"><img src="https://github.com/maplelaef0320.png?size=96" width="56" height="56" alt="maplelaef0320"/><br/><sub><b>maplelaef0320</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/maxsyst"><img src="https://github.com/maxsyst.png?size=96" width="56" height="56" alt="maxsyst"/><br/><sub><b>maxsyst</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/saschabrockel"><img src="https://github.com/saschabrockel.png?size=96" width="56" height="56" alt="saschabrockel"/><br/><sub><b>saschabrockel</b></sub></a><br/><sub>1 issue</sub></td>
-    <td align="center" width="16%"><a href="https://github.com/soonfatt"><img src="https://github.com/soonfatt.png?size=96" width="56" height="56" alt="soonfatt"/><br/><sub><b>soonfatt</b></sub></a><br/><sub>1 issue</sub></td>
-  </tr>
-  <tr>
-    <td align="center" width="16%"><a href="https://github.com/Terry0930"><img src="https://github.com/Terry0930.png?size=96" width="56" height="56" alt="Terry0930"/><br/><sub><b>Terry0930</b></sub></a><br/><sub>1 issue</sub></td>
-  </tr>
-</table>
-
-Also thanks to **Priyanshuu00007**, who designed the OpenStock logo and visual identity, and **koevoet1221**, who fixed the MongoDB Docker build. Their GitHub accounts are no longer available, so they aren't linked above.
-
-Want to be here? Pick a [good first issue](https://github.com/Open-Dev-Society/OpenStock/issues?q=is%3Aopen+label%3A%22good+first+issue%22) or report a bug you hit.
-
-## 🛡️ Security <a name="security"></a>
-
-Found a vulnerability? Please don't open a public issue. [Report it privately on GitHub](https://github.com/Open-Dev-Society/OpenStock/security/advisories/new); we'll work on a fix with you and credit you.
+---
 
 ## 📜 License <a name="license"></a>
 
-OpenStock is and will remain free and open for everyone. It's licensed under [AGPL-3.0](LICENSE): if you modify, redistribute or deploy it (including as a web service), you must release your source code under the same license and credit the original authors.
+OpenStock is and will remain free and open for everyone. It is licensed under [AGPL-3.0](LICENSE). If you modify, redistribute, or deploy it, you must release your source code under the same license and credit the original authors.
 
-## 🌱 Open Dev Society manifesto <a name="manifesto"></a>
-
-We live in a world where knowledge is hidden behind paywalls. Where tools are locked in subscriptions. Where information is twisted by bias. Where newcomers are told they’re not “good enough” to build.
-
-We believe there’s a better way.
-
-- **Our belief:** technology should belong to everyone. Knowledge should be open, free and accessible. Communities should welcome newcomers with trust, not gatekeeping.
-- **Our mission:** build free, open-source projects that make a real difference: tools professionals and students can use without barriers, knowledge platforms where learning is free forever, communities where every beginner is guided, not judged, and resources that run on trust, not profit.
-- **Our promise:** we will never lock knowledge. We will never charge for access. We will never trade trust for money. We run on transparency, donations and the strength of our community.
-- **Our call:** if you’ve ever felt you didn’t belong, struggled to find free resources, or wanted to build something meaningful, you belong here.
-
-Because the future belongs to those who build it openly.
-
-## 🙏 Acknowledgements <a name="acknowledgements"></a>
-
-- [Finnhub](https://finnhub.io) for accessible market data, and [TradingView](https://www.tradingview.com) for embeddable charts and widgets
-- [Adanos](https://adanos.org) for sentiment data
-- shadcn/ui, Radix UI, Tailwind CSS and the Next.js community
-- [Inngest](https://www.inngest.com) for dependable background jobs, and [Better Auth](https://www.better-auth.com) for simple, secure authentication
-- [Adrian Hajdin (JavaScript Mastery)](https://github.com/adrianhajdin), whose [Stock Market App tutorial](https://www.youtube.com/watch?v=gu4pafNCXng) was where OpenStock started
-
-Built openly, for everyone, forever free. © Open Dev Society.
-
-## ❤️ Sponsor OpenStock <a name="sponsors"></a>
-
-OpenStock is free, open source and used by **13,000+ registered people**. Keeping it that way costs money every month: hosting, the database, market data keys, AI and email, and the hours that go into reviewing pull requests and shipping fixes.
-
-**How OpenStock is funded**
-
-- **OpenStock Cloud will pay for hosting.** Cloud ($5 a month, coming soon) adds live quotes and email price alerts. Its subscribers will cover the servers, database and market data the hosted app needs, so the free site stays online without depending on donations.
-- **Sponsors keep the community moving.** Sponsorships pay for the time behind OpenStock: reviewing community pull requests, fixing bugs and shipping features at the pace 13,000+ people expect, with the core free for everyone. Self-hosting stays free, with every feature.
-
-**Pick a tier.** Each link opens GitHub Sponsors with the amount already selected. Cancel any time.
-
-| Tier | Monthly | What you get |
-|---|---|---|
-| [Backer](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=recurring&amount=5) | $5 | Your name in this README |
-| [Supporter](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=recurring&amount=25) | $25 | Name and avatar on the sponsor wall and the sponsor page |
-| [Company](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=recurring&amount=100) | $100 | Your logo in the footer of every public page, in this README and on the sponsor page |
-| [Partner](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=recurring&amount=500) | $500 | One of three sponsor slots in the app sidebar, seen by 13,000+ registered users, plus your logo on the landing page |
-
-Rather give once? [Make a one-time gift](https://github.com/sponsors/ravixalgorithm/sponsorships?frequency=one-time). Want an invoice or a custom partnership? [Talk with us](mailto:opendevsociety@gmail.com?subject=Sponsoring%20OpenStock). Everything, including where the money goes, is on the [sponsor page](https://openstock-ods.vercel.app/sponsor).
-
-Sponsorships are paid through GitHub Sponsors to [@ravixalgorithm](https://github.com/ravixalgorithm) (Ravi Pratap Singh, founder of Open Dev Society).
-
-Can't sponsor right now? Pick a [good first issue](https://github.com/Open-Dev-Society/OpenStock/issues?q=is%3Aopen+label%3A%22good+first+issue%22), star the repo, or share OpenStock with someone who pays too much for a terminal.
-
-**Current sponsors** are shown at the [top of this README](#readme): [RapidProxy](https://www.rapidproxy.io/?ref=openstock) · [Orbit](https://github.com/diip3sh/orbit)
-**Previously backed by:** [Atlas Cloud](https://www.atlascloud.ai) · [Siray.ai](https://www.siray.ai/) (2026)
+Built openly, for investors, forever free.

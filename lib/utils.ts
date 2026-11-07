@@ -231,9 +231,10 @@ export const tradingViewSymbolUrl = (tvSymbol: string) => `https://www.tradingvi
 // ERIC-B.ST → OMXSTO:ERIC_B, NOVO-B.CO → OMXCOP:NOVO_B, BT-A.L → LSE:BT.A. TSX accepts RCI-B as is.
 const TICKER_SEPARATOR: Record<string, string> = { BSE: '_', OMXSTO: '_', OMXCOP: '_', LSE: '.' };
 
-// Listed outside the US (has a known exchange suffix like .L, .T, .NS). Class shares such as BRK.B are not.
+// Listed outside the US (has a known exchange suffix like .L, .T, .NS, or pure numeric ticker like 600519, 00700, 2330).
 export function isInternationalSymbol(symbol: string): boolean {
     const upper = symbol.toUpperCase();
+    if (/^\d{3,6}$/.test(upper)) return true;
     return Object.keys(FINNHUB_TO_TRADINGVIEW_EXCHANGE).some((suffix) => upper.endsWith(suffix.toUpperCase()));
 }
 

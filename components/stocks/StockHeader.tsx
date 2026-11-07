@@ -19,11 +19,37 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
     const currency = rt?.currency || 'USD';
     const money = (value?: number) => (value != null && Number.isFinite(value) && value > 0 ? formatPrice(value, currency) : '—');
 
+    const formatVolUnit = (vol?: number) => {
+        if (!vol || vol <= 0) return '—';
+        if (rt?.market === 'cn' || rt?.market === 'hk') {
+            if (vol >= 1e8) return `${(vol / 1e8).toFixed(2)}亿手`;
+            if (vol >= 1e4) return `${(vol / 1e4).toFixed(2)}万手`;
+            return `${Math.round(vol).toLocaleString()}手`;
+        }
+        if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
+        if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`;
+        if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`;
+        return Math.round(vol).toLocaleString();
+    };
+
+    const formatAmount = (amt?: number) => {
+        if (!amt || amt <= 0) return '—';
+        if (amt >= 1e8) return `${(amt / 1e8).toFixed(2)}亿元`;
+        if (amt >= 1e4) return `${(amt / 1e4).toFixed(2)}万元`;
+        return `${Math.round(amt).toLocaleString()}`;
+    };
+
     const stats = [
         { label: '今开', icon: CalendarClock, value: money(rt?.open), hint: '今日开盘价' },
-        { label: '日内区间', icon: MoveVertical, value: rt?.low && rt?.high ? `${money(rt.low)} – ${money(rt.high)}` : '—', hint: '最低至最高' },
         { label: '昨收', icon: Gauge, value: money(rt?.prevClose), hint: '上一交易日收盘价' },
+        { label: '最高', icon: MoveVertical, value: money(rt?.high), hint: '今日最高价', valueClass: 'text-up' },
+        { label: '最低', icon: MoveVertical, value: money(rt?.low), hint: '今日最低价', valueClass: 'text-down' },
+        { label: '成交量', icon: Landmark, value: formatVolUnit(rt?.volume), hint: '今日累计成交量' },
+        { label: '成交额', icon: Landmark, value: formatAmount(rt?.turnover), hint: '今日累计成交金额' },
+        { label: '换手率', icon: Gauge, value: rt?.turnoverRate ? `${rt.turnoverRate.toFixed(2)}%` : '—', hint: '筹码换手活跃度' },
+        { label: '振幅', icon: MoveVertical, value: rt?.amplitude ? `${rt.amplitude.toFixed(2)}%` : '—', hint: '日内最高与最低波动幅度' },
         { label: '总市值', icon: Landmark, value: rt?.marketCap ? formatNumber(rt.marketCap) : '—', hint: `计价货币: ${currency}` },
+        { label: '市盈率(TTM)', icon: Gauge, value: rt?.pe ? rt.pe.toFixed(2) : '—', hint: '动态市盈率 PE-TTM' },
     ];
 
     const sourceLabel = rt?.market === 'cn'
@@ -59,13 +85,13 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
                 </div>
             </div>
 
-            <div className="card mt-[3px] grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
-                {stats.map(({ label, icon: Icon, value, hint }) => (
+            <div className="card mt-[3px] grid grid-cols-2 gap-2 p-3 sm:grid-cols-5">
+                {stats.map(({ label, icon: Icon, value, hint, valueClass }) => (
                     <div key={label} className="flex flex-col gap-1 rounded-[10px] bg-page/50 p-2.5" title={hint}>
                         <span className="flex items-center gap-1.5 text-[12px] text-faint">
                             <Icon className="size-3.5 text-muted-foreground" /> {label}
                         </span>
-                        <span className="num truncate text-[15px] font-semibold text-foreground">{value}</span>
+                        <span className={`num truncate text-[15px] font-semibold ${valueClass || 'text-foreground'}`}>{value}</span>
                     </div>
                 ))}
             </div>
@@ -87,10 +113,14 @@ export default async function StockHeader({ symbol }: { symbol: string }) {
     const company = profile?.name || symbol;
     const money = (value?: number) => (value ? formatPrice(value, currency) : '—');
 
+    const amp = quote?.h && quote?.l && quote?.pc ? ((quote.h - quote.l) / quote.pc) * 100 : 0;
+
     const stats = [
         { label: '今开', icon: CalendarClock, value: money(quote?.o), hint: '今日开盘价' },
-        { label: '日内区间', icon: MoveVertical, value: quote?.l && quote?.h ? `${money(quote.l)} – ${money(quote.h)}` : '—', hint: '最低至最高' },
         { label: '昨收', icon: Gauge, value: money(quote?.pc), hint: '上一交易日收盘价' },
+        { label: '最高', icon: MoveVertical, value: money(quote?.h), hint: '今日最高价', valueClass: 'text-up' },
+        { label: '最低', icon: MoveVertical, value: money(quote?.l), hint: '今日最低价', valueClass: 'text-down' },
+        { label: '日内振幅', icon: MoveVertical, value: amp ? `${amp.toFixed(2)}%` : '—', hint: '最高与最低振幅' },
         { label: '总市值', icon: Landmark, value: profile?.marketCapitalization ? formatNumber(profile.marketCapitalization) : '—', hint: `计价货币: ${currency}` },
     ];
 
