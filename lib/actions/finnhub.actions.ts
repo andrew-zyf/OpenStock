@@ -11,6 +11,8 @@ import { getSession } from '@/lib/better-auth/auth';
 import { findChineseStocks } from '@/lib/chinese-stocks';
 import { fetchRealtimeQuotes } from '@/lib/realtime-market';
 import { getMultiMarketNews } from '@/lib/actions/china-market.actions';
+import { identifyMarketAndCode } from '@/lib/market/instrument';
+import { optionalNumber as numeric } from '@/lib/market/contracts';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 // Key pool: each free key has its own 60 req/min, so N keys = N x the quota. Rotated per request.
@@ -59,10 +61,6 @@ type FinnhubCompanyProfile = {
     ticker?: string;
     finnhubIndustry?: string;
     weburl?: string;
-};
-
-type SearchStockCandidate = FinnhubSearchResult & {
-    __exchange?: string;
 };
 
 const FINNHUB_EXCHANGE_SUFFIXES = new Set([
@@ -166,7 +164,10 @@ function getExchangeLabel(symbol: string, exchange?: string) {
         return exchange.trim();
     }
 
-    const parts = symbol.split('.');
+    const meta = identifyMarketAndCode(symbol);
+    if (meta.market !== 'us') return meta.exchange;
+
+    const parts = meta.normalizedSymbol.split('.');
     const suffix = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : '';
 
     if (!suffix) {
@@ -199,30 +200,42 @@ export async function getLiveQuotes(symbols: string[]) {
         const finnhubQuotes = await Promise.all(missingUs.map((s) => getQuote(s, LIVE_QUOTE_TTL)));
         missingUs.forEach((s, idx) => {
             const fq = finnhubQuotes[idx];
-            if (fq?.c) {
+            const price = numeric(fq?.c);
+            if (fq && price !== undefined && price > 0) {
+                const prevClose = numeric(fq.pc);
+                const open = numeric(fq.o);
+                const high = numeric(fq.h);
+                const low = numeric(fq.l);
+                const change = numeric(fq.d) ?? (prevClose !== undefined && prevClose > 0 ? price - prevClose : undefined);
+                const changePercent = numeric(fq.dp) ?? (prevClose !== undefined && prevClose > 0 && change !== undefined ? change / prevClose * 100 : undefined);
+                const sourceTime = numeric(fq.t);
+                const timestamp = sourceTime !== undefined && sourceTime > 0 ? sourceTime : 0;
                 realtimeMap[s] = {
                     symbol: s,
                     name: s,
-                    price: fq.c,
-                    prevClose: fq.pc || 0,
-                    open: fq.o || 0,
-                    high: fq.h || 0,
-                    low: fq.l || 0,
-                    change: fq.d || 0,
-                    changePercent: fq.dp || 0,
-                    volume: 0,
+                    price,
+                    prevClose,
+                    open,
+                    high,
+                    low,
+                    change,
+                    changePercent,
+                    volumeUnit: 'shares',
+                    source: 'Finnhub',
+                    fetchedAt: new Date().toISOString(),
+                    asOf: timestamp ? new Date(timestamp * 1000).toISOString() : undefined,
                     currency: 'USD',
                     exchange: 'US',
                     market: 'us',
                     updatedAt: '',
-                    c: fq.c,
-                    d: fq.d || 0,
-                    dp: fq.dp || 0,
-                    h: fq.h || 0,
-                    l: fq.l || 0,
-                    o: fq.o || 0,
-                    pc: fq.pc || 0,
-                    t: fq.t || Math.floor(Date.now() / 1000),
+                    c: price,
+                    d: change,
+                    dp: changePercent,
+                    h: high,
+                    l: low,
+                    o: open,
+                    pc: prevClose,
+                    t: timestamp,
                 };
             }
         });
@@ -236,8 +249,16 @@ export async function getCompanyProfile(symbol: string) {
     if (symbol.includes(':') || !hasFinnhubQuotes(symbol)) return null;
     try {
         const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${encodeURIComponent(symbol)}`;
-        // Cache profile for 24 hours
-        return await fetchJSON<FinnhubCompanyProfile>(url, 86400);
+        // Cache the raw profile for 24 hours; convert Finnhub's millions exactly
+        // once at this boundary, without mutating the cached provider response.
+        const profile = await fetchJSON<FinnhubCompanyProfile>(url, 86400);
+        const millions = profile.marketCapitalization;
+        return {
+            ...profile,
+            marketCapitalization: typeof millions === 'number' && Number.isFinite(millions)
+                ? millions * 1_000_000
+                : undefined,
+        };
     } catch (e) {
         logFailure('profile', symbol, e);
         return null;
@@ -384,7 +405,7 @@ async function fetchTencentSmartbox(query: string): Promise<StockWithWatchlistSt
 
             let symbol = '';
             let exchange = '';
-            let typeLabel = secType === 'ETF' ? 'ETF基金' : secType === 'ZS' ? '核心指数' : '股票';
+            const typeLabel = secType === 'ETF' ? 'ETF基金' : secType === 'ZS' ? '核心指数' : '股票';
 
             if (mkt === 'sh') {
                 symbol = `${rawCode}.SS`;
@@ -392,8 +413,11 @@ async function fetchTencentSmartbox(query: string): Promise<StockWithWatchlistSt
             } else if (mkt === 'sz') {
                 symbol = `${rawCode}.SZ`;
                 exchange = '深交所 A股';
+            } else if (mkt === 'bj') {
+                symbol = `${rawCode}.BJ`;
+                exchange = '北交所 A股';
             } else if (mkt === 'hk') {
-                symbol = `${rawCode.padStart(5, '0')}.HK`;
+                symbol = `${rawCode}.HK`;
                 exchange = '港交所 HKEX';
             } else if (mkt === 'us') {
                 symbol = rawCode.split('.')[0].toUpperCase();
@@ -403,7 +427,7 @@ async function fetchTencentSmartbox(query: string): Promise<StockWithWatchlistSt
             }
 
             out.push({
-                symbol,
+                symbol: identifyMarketAndCode(symbol).normalizedSymbol,
                 name: pinyin ? `${rawName} (${pinyin})` : rawName,
                 exchange,
                 type: typeLabel,
@@ -421,13 +445,16 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
         const trimmed = typeof query === 'string' ? query.trim() : '';
 
         if (!trimmed) {
-            return POPULAR_STOCKS.map(({ symbol, name, exchange }) => ({
-                symbol,
-                name,
-                exchange,
-                type: '热门标的',
-                isInWatchlist: false,
-            }));
+            return Array.from(new Map(POPULAR_STOCKS.map(({ symbol, name, exchange }) => {
+                const canonical = identifyMarketAndCode(symbol).normalizedSymbol;
+                return [canonical, {
+                    symbol: canonical,
+                    name,
+                    exchange,
+                    type: '热门标的',
+                    isInWatchlist: false,
+                }];
+            })).values());
         }
 
         // 1. Local dictionary (Taiwan stocks, A-share/HK blue chips, Pinyin initials) + Tencent Smartbox live search
@@ -438,8 +465,10 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
 
         const mergedMap = new Map<string, StockWithWatchlistStatus>();
         for (const c of localMatches) {
-            mergedMap.set(c.symbol.toUpperCase(), {
-                symbol: c.symbol,
+            const canonical = identifyMarketAndCode(c.symbol).normalizedSymbol;
+            if (mergedMap.has(canonical)) continue;
+            mergedMap.set(canonical, {
+                symbol: canonical,
                 name: c.name,
                 exchange: c.exchange,
                 type: c.type,
@@ -447,9 +476,9 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
             });
         }
         for (const s of smartboxMatches) {
-            const key = s.symbol.toUpperCase();
+            const key = identifyMarketAndCode(s.symbol).normalizedSymbol;
             if (!mergedMap.has(key)) {
-                mergedMap.set(key, s);
+                mergedMap.set(key, { ...s, symbol: key });
             }
         }
 
@@ -460,7 +489,7 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
                 const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
                 const results = Array.isArray(data?.result) ? data.result : [];
                 for (const r of results) {
-                    const upper = (r.symbol || '').toUpperCase();
+                    const upper = identifyMarketAndCode(r.symbol || '').normalizedSymbol;
                     if (!upper || mergedMap.has(upper)) continue;
                     mergedMap.set(upper, {
                         symbol: upper,

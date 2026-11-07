@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { identifyMarketAndCode } from '@/lib/market/instrument';
 
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -123,9 +124,8 @@ export function formatNumber(num?: number | null): string {
     // Guard against missing/invalid market caps
     if (num === undefined || num === null || !Number.isFinite(num) || num <= 0) return '—';
 
-    // Finnhub's marketCapitalization is in Millions (e.g. $4T is 4,000,000 < 1e8),
-    // while Tencent GTK / TWSE marketCap is in full currency units (>= 1e8).
-    const value = num >= 1e8 ? num : num * 1000000;
+    // Providers must normalize to absolute currency units before formatting.
+    const value = num;
 
     if (value >= 1e12) return `${(value / 1e12).toFixed(2)}万亿`;
     if (value >= 1e8) return `${(value / 1e8).toFixed(2)}亿`;
@@ -230,31 +230,45 @@ const TICKER_SEPARATOR: Record<string, string> = { BSE: '_', OMXSTO: '_', OMXCOP
 
 // Listed outside the US (has a known exchange suffix like .L, .T, .NS, or pure numeric ticker like 600519, 00700, 2330).
 export function isInternationalSymbol(symbol: string): boolean {
-    const upper = symbol.toUpperCase();
-    if (/^\d{3,6}$/.test(upper)) return true;
-    return Object.keys(FINNHUB_TO_TRADINGVIEW_EXCHANGE).some((suffix) => upper.endsWith(suffix.toUpperCase()));
+    const meta = identifyMarketAndCode(symbol);
+    if (meta.market !== 'us') return true;
+    return Object.keys(FINNHUB_TO_TRADINGVIEW_EXCHANGE).some((suffix) => meta.normalizedSymbol.endsWith(suffix));
 }
 
 export function tvToAppSymbol(symbol: string): string {
-    if (!symbol) return '';
-    const upper = symbol.trim().toUpperCase();
-    if (upper.startsWith('SSE:')) return `${upper.slice(4)}.SS`;
-    if (upper.startsWith('SZSE:')) return `${upper.slice(5)}.SZ`;
-    if (upper.startsWith('HKEX:')) {
-        const num = upper.slice(5);
-        return `${num.padStart(4, '0')}.HK`;
+    return identifyMarketAndCode(symbol).normalizedSymbol;
+}
+
+// Legacy spelling candidates are accepted only when the canonical parser agrees
+// they identify the same instrument. In particular TWSE and TPEX stay distinct.
+export function getSymbolAliases(symbol: string): string[] {
+    const meta = identifyMarketAndCode(symbol);
+    const canonical = meta.normalizedSymbol;
+    const code = canonical.split('.')[0];
+    const candidates = new Set([canonical, symbol.trim().toUpperCase()]);
+    if (meta.market === 'hk') {
+        candidates.add(`HKEX:${code}`);
+        for (let width = 1; /^\d+$/.test(code) && width <= 5; width++) {
+            const digits = String(Number(code)).padStart(width, '0');
+            candidates.add(digits);
+            candidates.add(`${digits}.HK`);
+            candidates.add(`HKEX:${digits}`);
+        }
+    } else if (meta.market === 'cn') {
+        candidates.add(code);
+        candidates.add(`${meta.exchangeId}:${code}`);
+        if (meta.exchangeId === 'SSE') candidates.add(`${code}.SH`);
+    } else if (meta.market === 'tw') {
+        candidates.add(`${canonical.endsWith('.TWO') ? 'TPEX' : 'TWSE'}:${code}`);
+    } else if (!canonical.includes(':')) {
+        for (const exchange of ['NASDAQ', 'NYSE', 'AMEX']) candidates.add(`${exchange}:${canonical}`);
     }
-    if (upper.startsWith('TWSE:')) return `${upper.slice(5)}.TW`;
-    if (upper.startsWith('TPEX:')) return `${upper.slice(5)}.TWO`;
-    if (upper.startsWith('NASDAQ:') || upper.startsWith('NYSE:') || upper.startsWith('AMEX:')) {
-        return upper.replace(/^(NASDAQ:|NYSE:|AMEX:)/, '');
-    }
-    return upper;
+    return [...candidates].filter((candidate) => identifyMarketAndCode(candidate).normalizedSymbol === canonical);
 }
 
 export function formatSymbolForTradingView(symbol: string): string {
     if (!symbol) return '';
-    const upperSymbol = symbol.toUpperCase();
+    const upperSymbol = identifyMarketAndCode(symbol).normalizedSymbol;
 
     // Check for known exchange suffixes, trying longer suffixes first
     // to avoid ".TWO" matching ".TW" prematurely

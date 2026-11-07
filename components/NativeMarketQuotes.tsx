@@ -1,23 +1,43 @@
+'use client';
+
 import Link from 'next/link';
+import Panel from '@/components/Panel';
+import DataFreshness from '@/components/DataFreshness';
+import { useLiveQuoteResource, type LiveQuoteMap } from '@/hooks/useLiveQuotes';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import ChangePill from '@/components/ChangePill';
-import { getLiveQuotes } from '@/lib/actions/finnhub.actions';
 import { tvToAppSymbol, formatPrice, formatNumber } from '@/lib/utils';
 import type { Market } from '@/lib/markets';
 
 function formatTurnover(amt?: number): string {
-    if (!amt || amt <= 0) return '—';
+    if (amt == null || !Number.isFinite(amt)) return '—';
     if (amt >= 1e8) return `${(amt / 1e8).toFixed(2)}亿`;
     if (amt >= 1e4) return `${(amt / 1e4).toFixed(0)}万`;
     return Math.round(amt).toLocaleString();
 }
 
-// Native Market Quotes Table: Zero-delay Level-1 real-time quotes grouped by industry
+export function NativeMarketPanels({ market, initialData }: { market: Market; initialData: LiveQuoteMap }) {
+    const symbols = [...new Set(market.groups.flatMap((group) => group.symbols.map(([symbol]) => tvToAppSymbol(symbol))))];
+    const seed = Object.values(initialData).some(Boolean) ? initialData : undefined;
+    const resource = useLiveQuoteResource(symbols, undefined, seed);
+    const quotes = resource.data ?? {};
+    return <>
+        <DataFreshness stale={resource.stale} loading={resource.loading} />
+        {resource.error && !resource.data && <p className="text-xs text-faint" role="status">行情暂不可用，稍后自动重试</p>}
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+            <Panel title="异动领跑" sub={`${market.name}精选资产涨跌幅绝对值排行（非全市场排名）`}>
+                <NativeMarketMovers market={market} quotes={quotes} />
+            </Panel>
+            <Panel title="精选报价" sub={`${market.name}核心资产报价 · 各标的来源与时间见代码提示`}>
+                <NativeMarketQuotesTable market={market} quotes={quotes} />
+            </Panel>
+        </div>
+    </>;
+}
+
+// Native Market Quotes Table grouped by industry
 // Clicking any asset opens it directly inside OpenStock (/stocks/[symbol]), never on a 3rd party site
-export async function NativeMarketQuotesTable({ market }: { market: Market }) {
-    const rawSymbols = market.groups.flatMap((g) => g.symbols.map(([s]) => s));
-    const appSymbols = [...new Set(rawSymbols.map(tvToAppSymbol))];
-    const quotes = await getLiveQuotes(appSymbols);
+export function NativeMarketQuotesTable({ market, quotes }: { market: Market; quotes: LiveQuoteMap }) {
 
     return (
         <div className="overflow-x-auto">
@@ -52,30 +72,30 @@ export async function NativeMarketQuotesTable({ market }: { market: Market }) {
                                 <tr key={rawSym} className="border-t border-line/50 transition-colors hover:bg-hover/50">
                                     <td className="px-3 py-2.5">
                                         <Link href={`/stocks/${appSymbol}`} className="group flex items-baseline gap-2 font-semibold">
-                                            <span className="text-foreground transition-colors group-hover:text-brand-ink">{name}</span>
-                                            <span className="mono text-[11px] text-faint">{appSymbol}</span>
+                                            <span className="text-foreground transition-colors group-hover:text-brand-ink">{name}{q?.stale ? ' · 更新失败，保留上次报价' : q == null ? ' · 暂不可用' : ''}</span>
+                                            <span className="mono text-[11px] text-faint" title={`${q?.source || '来源未提供'} · ${q?.asOf || '源时间未提供'}`}>{appSymbol}</span>
                                         </Link>
                                     </td>
                                     <td className="num px-3 py-2.5 text-right font-semibold text-foreground">
-                                        {q?.c ? formatPrice(q.c, currency) : '—'}
+                                        {q?.c != null ? formatPrice(q.c, currency) : '—'}
                                     </td>
                                     <td className="px-3 py-2.5 text-right">
                                         <ChangePill value={q?.dp} />
                                     </td>
-                                    <td className={`num px-3 py-2.5 text-right font-medium ${isUp ? 'text-up' : 'text-down'}`}>
+                                    <td className={`num px-3 py-2.5 text-right font-medium ${q?.d == null ? 'text-faint' : isUp ? 'text-up' : 'text-down'}`}>
                                         {q?.d != null ? `${sign}${q.d.toFixed(2)}` : '—'}
                                     </td>
                                     <td className="num hidden px-3 py-2.5 text-right text-xs text-foreground sm:table-cell">
-                                        {formatTurnover(q?.turnover)}
+                                        {q?.turnover != null ? `${formatTurnover(q.turnover)} ${currency}` : '—'}
                                     </td>
                                     <td className="num hidden px-3 py-2.5 text-right text-xs text-faint md:table-cell">
-                                        {q?.turnoverRate ? `${q.turnoverRate.toFixed(2)}%` : '—'}
+                                        {q?.turnoverRate != null ? `${q.turnoverRate.toFixed(2)}%` : '—'}
                                     </td>
                                     <td className="num hidden px-3 py-2.5 text-right text-xs font-medium text-foreground lg:table-cell">
-                                        {q?.marketCap ? formatNumber(q.marketCap) : '—'}
+                                        {q?.marketCap != null ? `${formatNumber(q.marketCap)} ${currency}` : '—'}
                                     </td>
                                     <td className="num hidden px-3 py-2.5 text-right text-xs text-faint xl:table-cell">
-                                        {q?.pe ? q.pe.toFixed(1) : '—'} / {q?.pb ? q.pb.toFixed(2) : '—'}
+                                        {q?.pe != null ? q.pe.toFixed(1) : '—'} / {q?.pb != null ? q.pb.toFixed(2) : '—'}
                                     </td>
                                 </tr>
                             );
@@ -85,7 +105,7 @@ export async function NativeMarketQuotesTable({ market }: { market: Market }) {
             </table>
             <div className="flex items-center justify-between border-t border-line px-3 py-2 text-[11.5px] text-faint">
                 <span>{market.name}核心蓝筹资产 · 原生揭示成交额、换手率、总市值与 PE/PB 估值 · 点击查看 K 线与五档盘口</span>
-                <span className="mono">支持 15 秒实时轮询</span>
+                <span className="mono">报价与异动共享快照</span>
             </div>
         </div>
     );
@@ -93,14 +113,13 @@ export async function NativeMarketQuotesTable({ market }: { market: Market }) {
 
 // Native Market Movers: Biggest gainers / losers across the market
 // Clicking any asset opens it directly inside OpenStock (/stocks/[symbol])
-export async function NativeMarketMovers({ market, count = 8 }: { market: Market; count?: number }) {
+export function NativeMarketMovers({ market, quotes, count = 8 }: { market: Market; quotes: LiveQuoteMap; count?: number }) {
     const rawSymbols = market.groups.flatMap((g) => g.symbols.map(([s]) => s));
     const nameMap = Object.fromEntries(market.groups.flatMap((g) => g.symbols.map(([s, n]) => [tvToAppSymbol(s), n])));
     const appSymbols = [...new Set(rawSymbols.map(tvToAppSymbol))];
-    const quotes = await getLiveQuotes(appSymbols);
 
     const ranked = appSymbols
-        .flatMap((sym) => (quotes[sym]?.c ? [{ symbol: sym, name: nameMap[sym] || sym, quote: quotes[sym]! }] : []))
+        .flatMap((sym) => (quotes[sym]?.c != null && quotes[sym]?.dp != null ? [{ symbol: sym, name: nameMap[sym] || sym, quote: quotes[sym]! }] : []))
         .sort((a, b) => Math.abs(b.quote.dp ?? 0) - Math.abs(a.quote.dp ?? 0))
         .slice(0, count);
 
@@ -120,13 +139,13 @@ export async function NativeMarketMovers({ market, count = 8 }: { market: Market
                                 {up ? <ArrowUpRight className="size-4" /> : <ArrowDownRight className="size-4" />}
                             </span>
                             <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[13.5px] font-semibold text-foreground">{name}</span>
+                                <span className="block truncate text-[13.5px] font-semibold text-foreground">{name}{quote.stale ? ' · 更新失败，保留上次报价' : ''}</span>
                                 <span className="mono block text-[11.5px] text-faint">
-                                    {symbol} {quote.turnover ? `· 额 ${formatTurnover(quote.turnover)}` : ''}
+                                    {symbol} {quote.turnover != null ? `· 额 ${formatTurnover(quote.turnover)} ${currency}` : ''}
                                 </span>
                             </span>
                             <span className="num text-xs font-semibold text-foreground">
-                                {formatPrice(quote.c, currency)}
+                                {quote.c != null ? formatPrice(quote.c, currency) : '—'}
                             </span>
                             <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-hover">
                                 <span

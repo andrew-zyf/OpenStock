@@ -1,37 +1,45 @@
 'use client';
 
-import { useEffect, useState } from "react";
-import { isRealtime } from "@/lib/market-data";
+import { useEffect, useRef } from 'react';
+import { useMarketResource } from '@/hooks/useMarketResource';
+import { isRealtime } from '@/lib/market-data';
+import { QUOTE_REFRESH_MS } from '@/lib/market/refresh';
 
-export type LiveQuote = { c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number };
+export type LiveQuote = {
+    c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number;
+    priceBasis?: 'last-trade' | 'previous-close';
+    currency?: string; volume?: number; turnover?: number; turnoverRate?: number; marketCap?: number;
+    pe?: number; pb?: number; source?: string; asOf?: string; fetchedAt?: string; stale?: boolean;
+};
+export type LiveQuoteMap = Record<string, LiveQuote | null>;
 
-// Realtime mode only: polls the shared /api/quotes cache while the tab is visible.
-// In cached mode prices come from the server render and refresh hourly for everyone.
-export function useLiveQuotes(symbols: string[], intervalMs = 15_000) {
-    const [quotes, setQuotes] = useState<Record<string, LiveQuote | null>>({});
-    const key = symbols.join(",");
+export function mergeQuoteSnapshot(symbols: string[], data: LiveQuoteMap, previous: LiveQuoteMap): LiveQuoteMap {
+    return Object.fromEntries(symbols.map((symbol) => [symbol,
+        data[symbol] ? { ...data[symbol], stale: false }
+            : previous[symbol] ? { ...previous[symbol], stale: true } : null,
+    ]));
+}
 
-    useEffect(() => {
-        if (!key || !isRealtime) return;
-        let cancelled = false;
+export function useLiveQuoteResource(symbols: string[], intervalMs = QUOTE_REFRESH_MS.realtime, initialData?: LiveQuoteMap) {
+    const key = [...new Set(symbols)].join(',');
+    const previous = useRef({ key, data: initialData ?? {} });
+    const resource = useMarketResource<LiveQuoteMap>({
+        key: `quotes:${key}`, enabled: Boolean(key), initialData,
+        intervalMs: isRealtime ? intervalMs : QUOTE_REFRESH_MS.cached,
+        loader: async () => {
+            const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(key)}`);
+            if (!response.ok) throw new Error(`行情请求失败 (${response.status})`);
+            const data: LiveQuoteMap = await response.json();
+            if (!Object.values(data).some((quote) => quote != null)) throw new Error('行情暂不可用');
+            const prior = previous.current.key === key ? previous.current.data : initialData ?? {};
+            return mergeQuoteSnapshot(key.split(','), data, prior);
+        },
+    });
+    useEffect(() => { previous.current = { key, data: resource.data ?? {} }; }, [key, resource.data]);
+    return { ...resource, stale: resource.stale || Object.values(resource.data ?? {}).some((quote) => quote?.stale) };
+}
 
-        const load = async () => {
-            if (document.visibilityState !== "visible") return;
-            try {
-                const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(key)}`);
-                if (res.ok && !cancelled) setQuotes(await res.json());
-            } catch { /* keep the last good prices */ }
-        };
-        const onVisibility = () => { if (document.visibilityState === "visible") load(); };
-
-        const interval = setInterval(load, intervalMs);
-        document.addEventListener("visibilitychange", onVisibility);
-        return () => {
-            cancelled = true;
-            clearInterval(interval);
-            document.removeEventListener("visibilitychange", onVisibility);
-        };
-    }, [key, intervalMs]);
-
-    return quotes;
+// Preserve the public map contract used by existing price displays.
+export function useLiveQuotes(symbols: string[], intervalMs = QUOTE_REFRESH_MS.realtime) {
+    return useLiveQuoteResource(symbols, intervalMs).data ?? {};
 }

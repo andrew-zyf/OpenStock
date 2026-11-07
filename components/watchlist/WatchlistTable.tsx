@@ -7,10 +7,12 @@ import CreateAlertModal from "./CreateAlertModal";
 import WatchlistButton from "@/components/WatchlistButton";
 import ChangePill from "@/components/ChangePill";
 import PriceFlash from "@/components/PriceFlash";
-import { useLiveQuotes } from "@/hooks/useLiveQuotes";
+import { useLiveQuoteResource } from "@/hooks/useLiveQuotes";
 import { SearchButton } from "@/components/SearchCommand";
 import { formatNumber, formatPrice } from "@/lib/utils";
-import { hasFinnhubQuotes } from "@/lib/markets";
+import { identifyMarketAndCode } from "@/lib/market/instrument";
+import { getInstrumentCapabilities } from "@/lib/market/capabilities";
+import { alertsEnabled, isRealtime } from "@/lib/market-data";
 import type { getWatchlistData } from "@/lib/actions/finnhub.actions";
 
 type Row = Awaited<ReturnType<typeof getWatchlistData>>[number];
@@ -29,11 +31,7 @@ const SUGGESTIONS = [
 ];
 
 function getMarketOfSymbol(symbol: string): 'us' | 'cn' | 'hk' | 'tw' {
-    const s = symbol.toUpperCase();
-    if (s.endsWith('.SS') || s.endsWith('.SZ') || /^\d{6}$/.test(s)) return 'cn';
-    if (s.endsWith('.HK') || /^\d{3,5}$/.test(s)) return 'hk';
-    if (s.endsWith('.TW') || s.endsWith('.TWO')) return 'tw';
-    return 'us';
+    return identifyMarketAndCode(symbol).market;
 }
 
 export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) {
@@ -42,14 +40,15 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
     const [sortField, setSortField] = useState<SortField>('default');
     const [sortAsc, setSortAsc] = useState<boolean>(false);
 
-    const live = useLiveQuotes(baseRows.map((r) => r.symbol));
+    const quotes = useLiveQuoteResource(baseRows.map((r) => r.symbol));
+    const live = quotes.data ?? {};
 
     // Server re-renders replace the local copy
     useEffect(() => setBaseRows(initialRows), [initialRows]);
 
     const liveRows = baseRows.map((r) => {
         const q = live[r.symbol];
-        return q?.c ? { ...r, price: q.c, change: q.d ?? r.change, changePercent: q.dp ?? r.changePercent } : r;
+        return q?.c != null ? { ...r, price: q.c, change: q.d, changePercent: q.dp, marketCap: q.marketCap ?? r.marketCap } : r;
     });
 
     const filteredRows = liveRows.filter((row) => {
@@ -142,7 +141,7 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-faint">
-                    <span className="mono">已开启 15 秒实时轮询</span>
+                    <span className="mono">{isRealtime ? '15 秒轮询' : '每小时轮询'}{quotes.stale ? ' · 更新失败，保留上次报价' : ''}</span>
                 </div>
             </div>
 
@@ -223,22 +222,22 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                                         <td className="is-num">
                                             <ChangePill value={row.price ? row.changePercent : null} />
                                         </td>
-                                        <td className={`is-num font-medium ${row.change > 0 ? 'text-up' : row.change < 0 ? 'text-down' : 'text-muted-foreground'}`}>
-                                            {row.price ? `${row.change > 0 ? '+' : ''}${row.change.toFixed(2)}` : '—'}
+                                        <td className={`is-num font-medium ${row.change == null ? 'text-muted-foreground' : row.change > 0 ? 'text-up' : row.change < 0 ? 'text-down' : 'text-muted-foreground'}`}>
+                                            {row.price != null && row.change != null ? `${row.change > 0 ? '+' : ''}${row.change.toFixed(2)}` : '—'}
                                         </td>
                                         <td className="is-num text-muted-foreground">
-                                            {row.marketCap ? formatNumber(row.marketCap) : '—'}
+                                            {row.marketCap != null ? formatNumber(row.marketCap) : '—'}
                                         </td>
                                         <td>
                                             <div className="flex items-center justify-end gap-1">
-                                                {hasFinnhubQuotes(row.symbol) ? (
+                                                {alertsEnabled && getInstrumentCapabilities(row.symbol).alerts ? (
                                                     <CreateAlertModal symbol={row.symbol} currentPrice={row.price} currency={row.currency}>
                                                         <button type="button" className="icon-btn" title={`为 ${row.symbol} 设置价格预警`} aria-label={`为 ${row.symbol} 设置价格预警`}>
                                                             <Bell />
                                                         </button>
                                                     </CreateAlertModal>
                                                 ) : (
-                                                    <span className="icon-btn opacity-40" title="价格预警目前支持美股和加密货币"><Bell /></span>
+                                                    <span className="icon-btn opacity-40" title="价格预警需要支持的美股标的及实时部署模式"><Bell /></span>
                                                 )}
                                                 <WatchlistButton
                                                     symbol={row.symbol}

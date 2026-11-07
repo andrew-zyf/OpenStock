@@ -6,9 +6,9 @@ import { formatPrice } from '@/lib/utils';
 import type { MarketId } from '@/lib/markets';
 
 const CROSS_MARKET_SYMBOLS = [
-    { marketId: 'us' as MarketId, marketName: '美股', symbol: 'SPY', label: '标普 500', currency: 'USD' },
+    { marketId: 'us' as MarketId, marketName: '美股', symbol: 'SPY', label: '标普 500 ETF', currency: 'USD' },
     { marketId: 'cn' as MarketId, marketName: 'A股', symbol: '000001.SS', label: '上证指数', currency: 'CNY', isIndex: true },
-    { marketId: 'hk' as MarketId, marketName: '港股', symbol: '2800.HK', label: '恒生指数 (盈富)', currency: 'HKD' },
+    { marketId: 'hk' as MarketId, marketName: '港股', symbol: '02800.HK', label: '盈富基金（恒指 ETF）', currency: 'HKD' },
     { marketId: 'tw' as MarketId, marketName: '台股', symbol: '0050.TW', label: '元大台湾50', currency: 'TWD' },
 ];
 
@@ -23,7 +23,7 @@ export default async function CrossMarketBar({ activeMarketId }: { activeMarketI
                     <Globe className="size-3.5 text-brand-ink" />
                     <span>四地联动速览 (美股 · A股 · 港股 · 台股)</span>
                 </div>
-                <span className="mono text-[11px] text-faint">实时 Level-1 直连 · 点击标的进入本地详情</span>
+                <span className="mono text-[11px] text-faint">页面加载快照 · 点击查看本地详情</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

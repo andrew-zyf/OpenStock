@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useState } from "react";
+import React from "react";
+import { useMarketResource } from '@/hooks/useMarketResource';
+import { getInstrumentCapabilities } from '@/lib/market/capabilities';
 import Panel from "@/components/Panel";
 import { getCapitalFlow } from "@/lib/actions/realtime-market.actions";
 import type { CapitalFlowData } from "@/lib/realtime-market";
 
-function formatFlowAmount(val: number, currency: string): string {
-    if (!val || !Number.isFinite(val)) return '0.00万';
+function formatFlowAmount(val: number | undefined, currency: string): string {
+    if (val == null || !Number.isFinite(val)) return '—';
     const sign = val > 0 ? '+' : '';
     const abs = Math.abs(val);
     const unit = currency === 'HKD' ? '港元' : currency === 'TWD' ? '台币' : '元';
@@ -16,40 +18,24 @@ function formatFlowAmount(val: number, currency: string): string {
 }
 
 export default function CapitalFlowCard({ symbol }: { symbol: string }) {
-    const [flow, setFlow] = useState<CapitalFlowData | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        let active = true;
-        const load = () => {
-            getCapitalFlow(symbol).then((data) => {
-                if (active) {
-                    setFlow(data);
-                    setLoading(false);
-                }
-            });
-        };
-
-        load();
-        const timer = setInterval(load, 15000);
-        return () => {
-            active = false;
-            clearInterval(timer);
-        };
-    }, [symbol]);
-
-    if (!flow) {
-        if (loading) {
-            return (
-                <Panel title="主力与散户资金流向" sub="实时超大单/大单/中单/小单筹码博弈">
-                    <div className="flex h-44 items-center justify-center text-xs text-faint">
-                        正在加载实时主力资金流向...
-                    </div>
-                </Panel>
-            );
-        }
-        return null;
-    }
+    const supported = getInstrumentCapabilities(symbol).capitalFlow;
+    const resource = useMarketResource<CapitalFlowData | null>({
+        key: `flow:${symbol}`, enabled: supported, intervalMs: 15_000,
+        loader: async () => {
+            const data = await getCapitalFlow(symbol);
+            if (!data) throw new Error('资金流向暂不可用');
+            return data;
+        },
+    });
+    const flow = resource.data;
+    if (!flow) return (
+        <Panel title="主力与散户资金流向" sub="按数据源订单分类展示">
+            <div className="flex h-44 items-center justify-center text-xs text-faint" role="status">
+                {!supported ? '当前标的暂不支持资金流向' : resource.loading ? '正在加载资金流向...' : resource.error && resource.error.message !== '资金流向暂不可用' ? '资金流向请求失败，稍后自动重试' : '暂无资金流向数据，稍后自动重试'}
+            </div>
+        </Panel>
+    );
+    const ratio = (value?: number) => value == null ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 
     const tiers = [
         { label: '超大单 (机构/封板)', desc: '>100万元', amount: flow.superLargeInflow, ratio: flow.superLargeRatio },
@@ -58,16 +44,18 @@ export default function CapitalFlowCard({ symbol }: { symbol: string }) {
         { label: '小单 (散户游击)', desc: '<4万元', amount: flow.smallInflow, ratio: flow.smallRatio },
     ];
 
-    const maxAbsAmount = Math.max(...tiers.map((t) => Math.abs(t.amount)), 1);
-    const isMainIn = flow.mainNetInflow >= 0;
+    const maxAbsAmount = Math.max(...tiers.map((t) => Math.abs(t.amount ?? 0)), 1);
+    const isMainIn = (flow.mainNetInflow ?? 0) >= 0;
 
     return (
         <Panel
             title="主力与散户资金流向"
-            sub="超大单/大单主力动向 vs 中小单散户博弈"
+            sub={`${flow.source} · ${flow.asOf ? `截至 ${flow.asOf}` : '源时间未提供'} · ${flow.currency}`}
             action={<span className="mono text-[11px] text-faint">15秒刷新</span>}
         >
             <div className="flex flex-col gap-3 p-3.5 text-xs">
+                {resource.stale && <p className="text-faint" role="status">更新失败，保留上次数据</p>}
+                {[flow.mainNetInflow, flow.superLargeInflow, flow.largeInflow, flow.mediumInflow, flow.smallInflow].every((value) => value == null) && <p className="text-faint">数据源未提供资金流金额</p>}
                 {/* 主力净流入核心横幅 */}
                 <div className="flex items-center justify-between rounded-lg bg-page/50 p-3 border border-line">
                     <div className="flex flex-col gap-0.5">
@@ -79,7 +67,7 @@ export default function CapitalFlowCard({ symbol }: { symbol: string }) {
                     <div className="flex flex-col items-end gap-0.5">
                         <span className="text-[11px] text-faint">主力净占比</span>
                         <span className={`pill mono px-2 py-0.5 text-xs font-bold ${isMainIn ? 'bg-red-500/15 text-up' : 'bg-emerald-500/15 text-down'}`}>
-                            {flow.mainNetRatio >= 0 ? `+${flow.mainNetRatio.toFixed(2)}%` : `${flow.mainNetRatio.toFixed(2)}%`}
+                            {ratio(flow.mainNetRatio)}
                         </span>
                     </div>
                 </div>
@@ -87,8 +75,8 @@ export default function CapitalFlowCard({ symbol }: { symbol: string }) {
                 {/* 四级资金明细条 */}
                 <div className="flex flex-col gap-2">
                     {tiers.map((t) => {
-                        const isPositive = t.amount >= 0;
-                        const barPct = Math.min(100, Math.max(4, Math.round((Math.abs(t.amount) / maxAbsAmount) * 100)));
+                        const isPositive = (t.amount ?? 0) >= 0;
+                        const barPct = Math.min(100, Math.round((Math.abs(t.amount ?? 0) / maxAbsAmount) * 100));
                         return (
                             <div key={t.label} className="flex flex-col gap-1 rounded-lg bg-page/30 p-2 border border-line/60">
                                 <div className="flex items-center justify-between">
@@ -98,7 +86,7 @@ export default function CapitalFlowCard({ symbol }: { symbol: string }) {
                                             {formatFlowAmount(t.amount, flow.currency)}
                                         </span>
                                         <span className="text-[11px] text-faint w-14 text-right">
-                                            ({t.ratio >= 0 ? `+${t.ratio.toFixed(2)}%` : `${t.ratio.toFixed(2)}%`})
+                                            ({ratio(t.ratio)})
                                         </span>
                                     </div>
                                 </div>

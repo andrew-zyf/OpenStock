@@ -168,7 +168,7 @@ describe('formatMarketCapValue', () => {
 describe('formatChangePercent', () => {
     it('returns empty string for undefined/null', () => {
         expect(formatChangePercent(undefined)).toBe('');
-        expect(formatChangePercent(null as any)).toBe('');
+        expect(formatChangePercent(null as unknown as number)).toBe('');
     });
 
     it('formats positive change with + sign', () => {
@@ -200,21 +200,24 @@ describe('getChangeColorClass', () => {
 });
 
 describe('formatNumber', () => {
-    // Finnhub's profile2 marketCapitalization is expressed in millions of USD,
-    // which formatNumber scales up by 1e6.
-    it('formats market caps (input in millions) into T/B/M/K suffixes', () => {
-        expect(formatNumber(3_000_000)).toBe('3.00T'); // 3,000,000M => $3T
-        expect(formatNumber(150_000)).toBe('150.00B'); // 150,000M => $150B
-        expect(formatNumber(150)).toBe('150.00M'); // 150M => $150M
+    it('formats absolute currency units with Chinese suffixes', () => {
+        expect(formatNumber(3_000_000_000_000)).toBe('3.00万亿');
+        expect(formatNumber(150_000_000_000)).toBe('1500.00亿');
+        expect(formatNumber(24_880_000)).toBe('2488.00万');
+        expect(formatNumber(3_000_000)).toBe('300.00万');
+        expect(formatNumber(150_000)).toBe('15.00万');
+        expect(formatNumber(150)).toBe('150');
     });
 
-    it('returns N/A for missing or non-finite market caps', () => {
-        // Finnhub omits marketCapitalization for many symbols (e.g. ETFs); the
-        // watchlist passes that value straight through, so it must not render "NaN".
-        expect(formatNumber(undefined)).toBe('N/A');
-        expect(formatNumber(null)).toBe('N/A');
-        expect(formatNumber(NaN)).toBe('N/A');
-        expect(formatNumber(Infinity)).toBe('N/A');
+    it('changes suffix smoothly at one hundred million without rescaling the input', () => {
+        expect(formatNumber(99_999_999)).toBe('10000.00万');
+        expect(formatNumber(100_000_000)).toBe('1.00亿');
+    });
+
+    it('returns an em dash for missing, non-finite, or non-positive market caps', () => {
+        for (const value of [undefined, null, NaN, Infinity, -Infinity, 0, -1]) {
+            expect(formatNumber(value)).toBe('—');
+        }
     });
 });
 

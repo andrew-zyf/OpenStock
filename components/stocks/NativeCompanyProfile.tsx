@@ -7,7 +7,7 @@ export default async function NativeCompanyProfile({ symbol }: { symbol: string 
     const profile = await getCompanyProfileData(symbol);
 
     return (
-        <Panel title="公司概况" sub={`${profile.name} · 主营业务与基本资料 (官方核定档案)`}>
+        <Panel title="公司概况" sub={`${profile.name} · ${profile.source ?? (profile.status === 'unsupported' ? '当前标的不支持公司档案查询' : '公司资料暂缺')}`}>
             <div className="flex flex-col gap-4 p-4 text-xs">
                 {/* 核心标头与标签 */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">

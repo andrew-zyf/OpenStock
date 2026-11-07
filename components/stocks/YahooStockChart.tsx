@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickChart, Clock, LineChart, ZoomIn, ZoomOut, RotateCcw, MoveHorizontal } from "lucide-react";
 import Panel from "@/components/Panel";
 import ChangePill from "@/components/ChangePill";
 import { getUnifiedChartSeries } from "@/lib/actions/realtime-market.actions";
 import { formatPrice } from "@/lib/utils";
-import type { ChartDataPoint, ChartSeries } from "@/lib/realtime-market";
+import type { ChartDataPoint } from "@/lib/realtime-market";
+import { useMarketResource } from "@/hooks/useMarketResource";
+import { identifyMarketAndCode } from "@/lib/market/instrument";
+import {
+    anchorChartViewport, chartBarKey, chartMovingAverage as calcMA, chartPointMetrics,
+    chartRSI as calcRSI, formatChartVolume as formatVol, resolveChartViewport,
+    sourcedVwap, type ChartViewport,
+} from "@/lib/market/chart-view";
 
 type Period = '1d' | '5d' | '1m' | '3m' | '1y' | '5y';
 type ChartStyle = 'candlestick' | 'line';
@@ -17,34 +24,10 @@ const PERIODS: { id: Period; label: string }[] = [
     { id: '1d', label: '分时' },
     { id: '5d', label: '五日' },
     { id: '1m', label: '日K' },
-    { id: '3m', label: '季K' },
+    { id: '3m', label: '三月日K' },
     { id: '1y', label: '周K' },
     { id: '5y', label: '月K' },
 ];
-
-function formatVol(vol?: number, market?: string): string {
-    if (!vol || vol <= 0) return '—';
-    if (market === 'cn' || market === 'hk') {
-        if (vol >= 1e8) return `${(vol / 1e8).toFixed(2)}亿手`;
-        if (vol >= 1e4) return `${(vol / 1e4).toFixed(2)}万手`;
-        return `${Math.round(vol).toLocaleString()}手`;
-    }
-    if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
-    if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`;
-    if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`;
-    return Math.round(vol).toLocaleString();
-}
-
-function calcMA(points: ChartDataPoint[], window: number): (number | null)[] {
-    return points.map((_, idx) => {
-        if (idx < window - 1) return null;
-        let sum = 0;
-        for (let i = idx - window + 1; i <= idx; i++) {
-            sum += points[i].close;
-        }
-        return sum / window;
-    });
-}
 
 function calcBOLL(points: ChartDataPoint[], window = 20, k = 2) {
     const mb: (number | null)[] = [];
@@ -133,52 +116,44 @@ function calcKDJ(points: ChartDataPoint[], n = 9) {
     return { kList, dList, jList };
 }
 
-function calcRSI(points: ChartDataPoint[], period: number): (number | null)[] {
-    const res: (number | null)[] = [];
-    if (points.length === 0) return res;
-    res.push(null);
-    let avgGain = 0;
-    let avgLoss = 0;
-
-    for (let i = 1; i < points.length; i++) {
-        const diff = points[i].close - points[i - 1].close;
-        const gain = diff > 0 ? diff : 0;
-        const loss = diff < 0 ? -diff : 0;
-
-        if (i <= period) {
-            avgGain += gain / period;
-            avgLoss += loss / period;
-            if (i < period) {
-                res.push(null);
-                continue;
-            }
-        } else {
-            avgGain = (avgGain * (period - 1) + gain) / period;
-            avgLoss = (avgLoss * (period - 1) + loss) / period;
-        }
-
-        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        const rsi = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
-        res.push(rsi);
-    }
-    return res;
-}
-
-export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbol: string; tvSymbol?: string }) {
+export default function YahooStockChart({ symbol }: { symbol: string; tvSymbol?: string }) {
     const [period, setPeriod] = useState<Period>('1d');
     const [chartStyle, setChartStyle] = useState<ChartStyle>('line');
     const [mainOverlay, setMainOverlay] = useState<MainOverlay>('ma');
     const [subIndicator, setSubIndicator] = useState<SubIndicator>('vol');
-    const [chartData, setChartData] = useState<ChartSeries | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-    const [viewRange, setViewRange] = useState<[number, number] | null>(null);
-    const [, startTransition] = useTransition();
+    const instrument = identifyMarketAndCode(symbol);
+    const supported = instrument.exchangeId !== 'BSE' && instrument.kind !== 'unknown'
+        && !(instrument.market === 'tw' && (instrument.exchangeId !== 'TWSE' || instrument.kind === 'index'))
+        && !(period === '5d' && (instrument.market === 'cn' || instrument.market === 'hk'));
+    const resourceKey = `chart:${instrument.normalizedSymbol}:${period}`;
+    const loader = useCallback(async () => {
+        const data = await getUnifiedChartSeries(symbol, period);
+        if (!data?.points.length) throw new Error('该标的暂无此周期行情数据');
+        return data;
+    }, [symbol, period]);
+    const { data: chartData, loading, error, stale } = useMarketResource({
+        key: resourceKey,
+        loader,
+        enabled: supported,
+        intervalMs: period === '1d' || period === '5d' ? 30_000 : 3_600_000,
+    });
+    const [hoveredBar, setHoveredBar] = useState<{ resource: string; key: string } | null>(null);
+    const [viewport, setViewport] = useState<{
+        resource: string; session: string; anchor: ChartViewport;
+    } | null>(null);
+    const allPoints = useMemo(() => chartData?.points ?? [], [chartData]);
+    const session = period === '1d' ? allPoints.at(-1)?.date ?? '' : '';
+    const viewAnchor = viewport?.resource === resourceKey && viewport.session === session ? viewport.anchor : null;
+    const setViewRange = (range: [number, number] | null) => {
+        const anchor = range ? anchorChartViewport(allPoints, range) : null;
+        setViewport(anchor ? { resource: resourceKey, session, anchor } : null);
+        setHoveredBar(null);
+    };
 
     // Drag-to-pan refs
     const isDragging = useRef(false);
     const dragStartX = useRef(0);
-    const initialRange = useRef<[number, number]>([0, 0]);
+    const initialRange = useRef<ChartViewport | null>(null);
     const hasMoved = useRef(false);
 
     // Switch period & auto-pick default style
@@ -190,26 +165,13 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
             setChartStyle('candlestick');
         }
         setViewRange(null);
-        startTransition(() => {});
     };
 
     useEffect(() => {
-        let active = true;
-        setLoading(true);
-        getUnifiedChartSeries(symbol, period).then((data) => {
-            if (active) {
-                setChartData(data);
-                setHoverIndex(null);
-                setViewRange(null);
-                setLoading(false);
-            }
-        });
-        return () => {
-            active = false;
-        };
-    }, [symbol, period]);
-
-    const allPoints = chartData?.points ?? [];
+        setHoveredBar(null);
+        setViewport(null);
+        isDragging.current = false;
+    }, [resourceKey, session]);
     const currency = chartData?.currency || 'USD';
     const market = chartData?.market || 'us';
 
@@ -227,11 +189,20 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
 
     // Active zoom & pan window
     const totalBars = allPoints.length;
-    const startIdx = viewRange ? Math.max(0, Math.min(viewRange[0], totalBars - 10)) : 0;
-    const endIdx = viewRange ? Math.min(totalBars - 1, Math.max(viewRange[1], startIdx + 9)) : totalBars - 1;
+    const defaultBars = period === '1m' ? 22 : period === '3m' ? 66 : period === '1y' ? 52 : period === '5y' ? 60 : totalBars;
+    const [startIdx, endIdx] = resolveChartViewport(allPoints, viewAnchor, defaultBars);
+    const timeframe = chartData?.interval === 'minute' ? '分钟K' : chartData?.interval === 'week' ? '周K'
+        : chartData?.interval === 'month' ? '月K' : '日K';
 
     // Sliced visible series
     const visiblePoints = useMemo(() => (totalBars ? allPoints.slice(startIdx, endIdx + 1) : []), [allPoints, totalBars, startIdx, endIdx]);
+    const hoveredIndex = hoveredBar?.resource === resourceKey
+        ? visiblePoints.findIndex((point) => chartBarKey(point) === hoveredBar.key) : -1;
+    const hoverIndex = hoveredIndex >= 0 ? hoveredIndex : null;
+    const setHoverIndex = (index: number | null) => {
+        const point = index != null ? visiblePoints[index] : null;
+        setHoveredBar(point ? { resource: resourceKey, key: chartBarKey(point) } : null);
+    };
     const visibleMa5 = useMemo(() => globalMa5.slice(startIdx, endIdx + 1), [globalMa5, startIdx, endIdx]);
     const visibleMa10 = useMemo(() => globalMa10.slice(startIdx, endIdx + 1), [globalMa10, startIdx, endIdx]);
     const visibleMa20 = useMemo(() => globalMa20.slice(startIdx, endIdx + 1), [globalMa20, startIdx, endIdx]);
@@ -265,22 +236,18 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
     const subH = 85;   // Subchart height
     const subBaseY = subTopY + subH;
 
-    // Price scaling over visible slice (including BOLL bands when active)
+    // Selected overlays share the price scale, including MA60 after its warm-up.
     const isCandle = chartStyle === 'candlestick' && period !== '1d';
-    const highs = visiblePoints.map((p, i) => {
-        const base = isCandle && p.high != null ? p.high : p.close;
-        if (isCandle && mainOverlay === 'boll' && visibleBollUb[i] != null) {
-            return Math.max(base, visibleBollUb[i]!);
-        }
-        return base;
-    });
-    const lows = visiblePoints.map((p, i) => {
-        const base = isCandle && p.low != null ? p.low : p.close;
-        if (isCandle && mainOverlay === 'boll' && visibleBollLb[i] != null) {
-            return Math.min(base, visibleBollLb[i]!);
-        }
-        return base;
-    });
+    const overlayValues = (index: number): number[] => {
+        const values = isCandle
+            ? mainOverlay === 'ma'
+                ? [visibleMa5[index], visibleMa10[index], visibleMa20[index], visibleMa60[index]]
+                : [visibleBollUb[index], visibleBollLb[index]]
+            : [sourcedVwap(visiblePoints[index])];
+        return values.filter((value): value is number => value != null && Number.isFinite(value));
+    };
+    const highs = visiblePoints.map((p, i) => Math.max(isCandle ? p.high ?? p.close : p.close, ...overlayValues(i)));
+    const lows = visiblePoints.map((p, i) => Math.min(isCandle ? p.low ?? p.close : p.close, ...overlayValues(i)));
     const rawMin = lows.length ? Math.min(...lows) : 0;
     const rawMax = highs.length ? Math.max(...highs) : 100;
     const range = rawMax - rawMin || 1;
@@ -301,10 +268,11 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
         const yHigh = paddingY + mainH - (((p.high ?? p.close) - yMin) / yDiff) * mainH;
         const yLow = paddingY + mainH - (((p.low ?? p.close) - yMin) / yDiff) * mainH;
 
-        const yAvg = p.avgPrice ? paddingY + mainH - ((p.avgPrice - yMin) / yDiff) * mainH : null;
+        const avg = sourcedVwap(p);
+        const yAvg = avg != null ? paddingY + mainH - ((avg - yMin) / yDiff) * mainH : null;
 
-        const volVal = p.volume || 0;
-        const barH = Math.max(2, (volVal / maxVol) * subH);
+        const volVal = p.volume ?? 0;
+        const barH = volVal > 0 ? Math.max(2, (volVal / maxVol) * subH) : 0;
         const yVol = subBaseY - barH;
 
         return { x, yClose, yOpen, yHigh, yLow, yAvg, yVol, barH, point: p, idx };
@@ -323,14 +291,19 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
         const last = coords[coords.length - 1];
         areaD = `${priceLineD} L ${last.x} ${paddingY + mainH} L ${first.x} ${paddingY + mainH} Z`;
 
-        avgLineD = coords.reduce((acc, c) => {
-            if (c.yAvg == null) return acc;
-            return acc === '' ? `M ${c.x} ${c.yAvg}` : `${acc} L ${c.x} ${c.yAvg}`;
-        }, '');
+        let previousHasVwap = false;
+        coords.forEach((c) => {
+            if (c.yAvg == null) {
+                previousHasVwap = false;
+                return;
+            }
+            avgLineD += `${previousHasVwap ? ' L' : ' M'} ${c.x} ${c.yAvg}`;
+            previousHasVwap = true;
+        });
     }
 
     // Previous close baseline
-    const prevCloseY = chartData?.prevClose && chartData.prevClose >= yMin && chartData.prevClose <= yMax
+    const prevCloseY = period === '1d' && chartData?.prevClose != null && chartData.prevClose > 0 && chartData.prevClose >= yMin && chartData.prevClose <= yMax
         ? paddingY + mainH - ((chartData.prevClose - yMin) / yDiff) * mainH
         : null;
 
@@ -429,19 +402,21 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
             : null;
     const activePoint = activeIdx != null ? visiblePoints[activeIdx] : null;
 
-    // Conventional Data Metrics for header
-    const activePrice = activePoint ? activePoint.close : chartData?.latestPrice;
-    const activeOpen = activePoint?.open;
-    const activeHigh = activePoint?.high;
-    const activeLow = activePoint?.low;
-    const activeVolume = activePoint?.volume;
-    const activeTime = activePoint ? (period === '1d' ? activePoint.time : activePoint.date) : '';
-    const activePrev = activeIdx != null && activeIdx > 0
-        ? visiblePoints[activeIdx - 1].close
-        : chartData?.prevClose || activeOpen;
-    const activeDiff = activePrice && activePrev ? activePrice - activePrev : 0;
-    const activeDiffPct = activePrev ? (activeDiff / activePrev) * 100 : 0;
-    const activeAmp = activeHigh && activeLow && activePrev ? ((activeHigh - activeLow) / activePrev) * 100 : 0;
+    // Session totals are used only for the unhovered latest intraday view.
+    const showSession = period === '1d' && hoverIndex == null && endIdx === totalBars - 1;
+    const metrics = chartData && activeIdx != null
+        ? chartPointMetrics(chartData, startIdx + activeIdx, showSession) : null;
+    const activePrice = metrics?.price;
+    const activeOpen = metrics?.open;
+    const activeHigh = metrics?.high;
+    const activeLow = metrics?.low;
+    const activeVolume = metrics?.volume;
+    const activeDiffPct = metrics?.changePercent;
+    const activeAmp = metrics?.amplitude;
+    const activeTime = activePoint
+        ? `${activePoint.date}${chartData?.interval === 'minute' ? ` ${activePoint.time}` : ''}` : '';
+    const metricScope = showSession ? '当日' : '本K';
+    const activeBarVolume = activePoint?.volume;
 
     const activeMa5 = activeIdx != null ? visibleMa5[activeIdx] : null;
     const activeMa10 = activeIdx != null ? visibleMa10[activeIdx] : null;
@@ -464,7 +439,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
     const activeR12 = activeIdx != null ? visibleRsi12[activeIdx] : null;
     const activeR24 = activeIdx != null ? visibleRsi24[activeIdx] : null;
 
-    // 实时量价与技术形态多空诊断标签 (专为中国技术派老玩家打造)
+    // Describe observed indicator values without inferring trading recommendations.
     const techSignals = useMemo(() => {
         if (!visiblePoints.length || activePrice == null) return [];
         const signals: { text: string; tone: 'up' | 'down' | 'warn' | 'neutral' }[] = [];
@@ -472,51 +447,51 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
         // 1. 均线系统诊断
         if (activeMa5 != null && activeMa10 != null && activeMa20 != null) {
             if (activeMa5 > activeMa10 && activeMa10 > activeMa20) {
-                signals.push({ text: '均线多头排列 (MA5>10>20)', tone: 'up' });
+                signals.push({ text: '均线排列 MA5>MA10>MA20', tone: 'up' });
             } else if (activeMa5 < activeMa10 && activeMa10 < activeMa20) {
-                signals.push({ text: '均线空头排列 (MA5<10<20)', tone: 'down' });
+                signals.push({ text: '均线排列 MA5<MA10<MA20', tone: 'down' });
             } else if (activePrice >= activeMa20) {
-                signals.push({ text: '站稳20日生命线', tone: 'up' });
+                signals.push({ text: `价格≥20根${timeframe}均线`, tone: 'neutral' });
             } else {
-                signals.push({ text: '失守20日生命线', tone: 'down' });
+                signals.push({ text: `价格<20根${timeframe}均线`, tone: 'neutral' });
             }
         }
 
         // 2. MACD 动能诊断
         if (activeDif != null && activeDea != null) {
             if (activeDif > activeDea && activeDif > 0) {
-                signals.push({ text: 'MACD零轴上多头红柱', tone: 'up' });
+                signals.push({ text: 'MACD DIF>DEA，DIF>0', tone: 'neutral' });
             } else if (activeDif > activeDea && activeDif <= 0) {
-                signals.push({ text: 'MACD水下金叉反弹', tone: 'up' });
+                signals.push({ text: 'MACD DIF>DEA，DIF≤0', tone: 'neutral' });
             } else {
-                signals.push({ text: 'MACD空头绿柱调整', tone: 'down' });
+                signals.push({ text: 'MACD DIF≤DEA', tone: 'neutral' });
             }
         }
 
         // 3. KDJ 超买超卖诊断
         if (activeJ != null) {
             if (activeJ >= 85) {
-                signals.push({ text: `KDJ超买钝化 (J=${activeJ.toFixed(0)})`, tone: 'warn' });
+                signals.push({ text: `KDJ J≥85 (${activeJ.toFixed(0)})`, tone: 'warn' });
             } else if (activeJ <= 15) {
-                signals.push({ text: `KDJ超卖黄金坑 (J=${activeJ.toFixed(0)})`, tone: 'up' });
+                signals.push({ text: `KDJ J≤15 (${activeJ.toFixed(0)})`, tone: 'warn' });
             }
         }
 
         // 4. BOLL 轨道位置诊断
         if (activeBollUb != null && activeBollLb != null && activeBollMb != null) {
             if (activePrice >= activeBollUb) {
-                signals.push({ text: '突破BOLL布林上轨', tone: 'up' });
+                signals.push({ text: '价格≥BOLL上轨', tone: 'neutral' });
             } else if (activePrice <= activeBollLb) {
-                signals.push({ text: '回踩BOLL下轨支撑', tone: 'up' });
+                signals.push({ text: '价格≤BOLL下轨', tone: 'neutral' });
             } else if (activePrice >= activeBollMb) {
-                signals.push({ text: 'BOLL中轨上方强势区', tone: 'neutral' });
+                signals.push({ text: '价格位于BOLL中轨上方', tone: 'neutral' });
             } else {
-                signals.push({ text: 'BOLL中轨下方弱势区', tone: 'down' });
+                signals.push({ text: '价格位于BOLL中轨下方', tone: 'neutral' });
             }
         }
 
         return signals;
-    }, [visiblePoints.length, activePrice, activeMa5, activeMa10, activeMa20, activeDif, activeDea, activeJ, activeBollUb, activeBollLb, activeBollMb]);
+    }, [visiblePoints.length, activePrice, activeMa5, activeMa10, activeMa20, activeDif, activeDea, activeJ, activeBollUb, activeBollLb, activeBollMb, timeframe]);
 
     // --- Zoom & Pan Event Handlers ---
     const handleZoomIn = () => {
@@ -556,7 +531,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
     };
 
     const handleResetZoom = () => {
-        setViewRange(null);
+        setViewRange([0, totalBars - 1]);
     };
 
     const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -564,7 +539,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
         isDragging.current = true;
         hasMoved.current = false;
         dragStartX.current = e.clientX;
-        initialRange.current = [startIdx, endIdx];
+        initialRange.current = anchorChartViewport(allPoints, [startIdx, endIdx]);
     };
 
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -573,13 +548,14 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
             if (Math.abs(deltaX) > 3) {
                 hasMoved.current = true;
             }
-            const windowSize = initialRange.current[1] - initialRange.current[0] + 1;
+            const [initialStart, initialEnd] = resolveChartViewport(allPoints, initialRange.current);
+            const windowSize = initialEnd - initialStart + 1;
             const pxPerBar = innerW / Math.max(1, windowSize);
             const shiftBars = Math.round(deltaX / pxPerBar);
 
             if (shiftBars !== 0) {
-                let newStart = initialRange.current[0] - shiftBars;
-                let newEnd = initialRange.current[1] - shiftBars;
+                let newStart = initialStart - shiftBars;
+                let newEnd = initialEnd - shiftBars;
                 if (newStart < 0) {
                     newEnd -= newStart;
                     newStart = 0;
@@ -628,7 +604,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
         setViewRange([newStart, newEnd]);
     };
 
-    const isZoomed = viewRange != null && (startIdx > 0 || endIdx < totalBars - 1);
+    const isZoomed = startIdx > 0 || endIdx < totalBars - 1;
 
     const action = (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -701,7 +677,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                     title="切换为分时/平滑折线"
                 >
                     <LineChart className="size-3" />
-                    <span>分时</span>
+                    <span>折线</span>
                 </button>
             </div>
         </div>
@@ -709,8 +685,8 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
 
     return (
         <Panel
-            title="实时价格走势"
-            sub={isCandle ? "经典专业蜡烛线 · 支持 MA/BOLL 主图与 VOL/MACD/KDJ/RSI 副图切换" : "原生分时走势 · 白色现价线与黄色分时均价线 (VWAP)"}
+            title="价格走势"
+            sub={isCandle ? `${timeframe} · MA/BOLL 主图与 VOL/MACD/KDJ/RSI 副图` : `${chartData?.interval === 'minute' ? '分时' : timeframe}价格走势${avgLineD ? ' · 含来源提供的 VWAP' : ''}`}
             action={action}
         >
             <div className="flex flex-col gap-2 p-4">
@@ -720,7 +696,9 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                         <span className="num text-3xl font-bold tracking-tight">
                             {activePrice != null ? formatPrice(activePrice, currency) : '—'}
                         </span>
-                        <ChangePill value={activeDiffPct} />
+                        <span className="flex items-center gap-1 text-xs text-faint">
+                            {period === '1d' ? '较昨收' : '较前K'} <ChangePill value={activeDiffPct} />
+                        </span>
                         {activeTime && (
                             <span className="mono flex items-center gap-1 text-xs font-semibold text-brand-ink">
                                 <Clock className="size-3" />
@@ -730,19 +708,27 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                        <span>今开: <strong className="num text-foreground">{activeOpen != null ? formatPrice(activeOpen, currency) : '—'}</strong></span>
-                        <span>最高: <strong className="num text-up">{activeHigh != null ? formatPrice(activeHigh, currency) : '—'}</strong></span>
-                        <span>最低: <strong className="num text-down">{activeLow != null ? formatPrice(activeLow, currency) : '—'}</strong></span>
-                        <span>振幅: <strong className="num text-foreground">{activeAmp ? `${activeAmp.toFixed(2)}%` : '—'}</strong></span>
-                        <span>成交量: <strong className="num text-foreground">{formatVol(activeVolume, market)}</strong></span>
-                        <span className="mono text-[11px] text-faint">15秒自动刷新</span>
+                        <span>{metricScope}开: <strong className="num text-foreground">{activeOpen != null ? formatPrice(activeOpen, currency) : '—'}</strong></span>
+                        <span>{metricScope}最高: <strong className="num text-up">{activeHigh != null ? formatPrice(activeHigh, currency) : '—'}</strong></span>
+                        <span>{metricScope}最低: <strong className="num text-down">{activeLow != null ? formatPrice(activeLow, currency) : '—'}</strong></span>
+                        <span>{metricScope}振幅: <strong className="num text-foreground">{activeAmp != null ? `${activeAmp.toFixed(2)}%` : '—'}</strong></span>
+                        <span>{metricScope}成交量: <strong className="num text-foreground">{formatVol(activeVolume, market)}</strong></span>
+                        <span role="status" className="mono text-[11px] text-faint">
+                            {!supported ? '此周期暂不支持' : stale ? '更新失败 · 显示上次成功数据' : error ? '数据加载失败' : period === '1d' || period === '5d' ? '30秒刷新 · 隐藏时暂停' : '1小时刷新 · 隐藏时暂停'}
+                        </span>
                     </div>
                 </div>
 
-                {/* 技术形态与量价多空自动诊断条 */}
+                {chartData && (
+                    <p className="mono text-[10px] text-faint">
+                        来源: {chartData.source} · 行情时间: {chartData.asOf ?? '来源未提供'}
+                    </p>
+                )}
+
+                {/* 技术指标观察 */}
                 {techSignals.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 pb-1 text-[11px]">
-                        <span className="text-faint font-semibold mr-1">多空形态诊断:</span>
+                        <span className="text-faint font-semibold mr-1">技术指标观察 ({timeframe}):</span>
                         {techSignals.map((sig) => {
                             const cls =
                                 sig.tone === 'up'
@@ -828,7 +814,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                             <>
                                 <span className="flex items-center gap-1.5 text-foreground">
                                     <span className="inline-block size-2 rounded-full bg-foreground" />
-                                    现价线
+                                    {chartData?.interval === 'minute' ? '价格线' : '收盘价线'}
                                 </span>
                                 {avgLineD && (
                                     <span className="flex items-center gap-1.5 text-amber-400">
@@ -890,6 +876,16 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                             className="size-full overflow-visible select-none cursor-crosshair active:cursor-grabbing"
                             preserveAspectRatio="none"
+                            role="img"
+                            tabIndex={0}
+                            aria-label={`${symbol} ${timeframe}价格与${subIndicator.toUpperCase()}图。左右方向键查看数据，鼠标滚轮缩放，按住拖动平移。${activeTime} 收盘价 ${activePrice ?? '未提供'}。`}
+                            onKeyDown={(event) => {
+                                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                                event.preventDefault();
+                                const index = activeIdx ?? 0;
+                                setHoverIndex(Math.max(0, Math.min(visiblePoints.length - 1, index + (event.key === 'ArrowLeft' ? -1 : 1))));
+                            }}
+                            onBlur={() => setHoverIndex(null)}
                             onMouseDown={handleMouseDown}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
@@ -1004,7 +1000,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                                 {subIndicator === 'vol' && (
                                     <>
                                         <text x={paddingX} y={subTopY - 6} fill="var(--faint, #888)" fontSize="10" className="mono">
-                                            VOL 成交量: {formatVol(activeVolume, market)}
+                                            VOL 本K成交量: {formatVol(activeBarVolume, market)}
                                         </text>
                                         {coords.map((c) => {
                                             const p = c.point;
@@ -1137,7 +1133,7 @@ export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbo
                         </svg>
                     ) : (
                         <div className="flex size-full flex-col items-center justify-center gap-2 text-sm text-faint">
-                            <p>该标的暂无此周期行情数据，请切换至其他时段查看。</p>
+                            <p>{!supported ? '该标的暂不支持此周期，请切换至其他时段查看。' : error?.message ?? '该标的暂无此周期行情数据，请切换至其他时段查看。'}</p>
                         </div>
                     )}
                 </div>

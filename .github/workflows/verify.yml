@@ -1,0 +1,27 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [feat/chinese-market-enhancements]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run build
+        env:
+          BETTER_AUTH_SECRET: build-only-placeholder-not-a-production-secret
+          BETTER_AUTH_URL: http://localhost:3080

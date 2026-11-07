@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { cookies } from "next/headers";
-import Panel from "@/components/Panel";
 import IndexPulse, { PulseSkeleton } from "@/components/IndexPulse";
 import DataFreshness from "@/components/DataFreshness";
 import MarketSwitcher from "@/components/MarketSwitcher";
@@ -8,9 +7,24 @@ import CrossMarketBar from "@/components/CrossMarketBar";
 import ChinaMarketMacroBar from "@/components/ChinaMarketMacroBar";
 import SectorFlowPanel from "@/components/SectorFlowPanel";
 import ChineseNewsFlash from "@/components/ChineseNewsFlash";
-import { NativeMarketQuotesTable, NativeMarketMovers } from "@/components/NativeMarketQuotes";
+import { NativeMarketPanels } from "@/components/NativeMarketQuotes";
+import { getLiveQuotes } from '@/lib/actions/finnhub.actions';
+import { getChinaSectorRankings } from '@/lib/actions/china-market.actions';
+import { tvToAppSymbol } from '@/lib/utils';
+import type { Market } from '@/lib/markets';
 import { MARKETS, MARKET_COOKIE, getMarket, isMarketOpen, marketForCountry } from "@/lib/markets";
 import { getSession } from "@/lib/better-auth/auth";
+
+async function MarketQuotes({ market }: { market: Market }) {
+    const symbols = [...new Set(market.groups.flatMap((group) => group.symbols.map(([symbol]) => tvToAppSymbol(symbol))))];
+    const initialData = await getLiveQuotes(symbols);
+    return <NativeMarketPanels key={market.id} market={market} initialData={initialData} />;
+}
+
+async function SectorFlow({ selectedMarket }: { selectedMarket: string }) {
+    const initialData = await getChinaSectorRankings();
+    return <SectorFlowPanel initialData={initialData} selectedMarket={selectedMarket} />;
+}
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ market?: string }> }) {
     const { market: requested } = await searchParams;
@@ -24,7 +38,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <div>
                     <h1 className="page-title">市场概览</h1>
                     <p className="page-sub">
-                        {market.name} · {open ? '开市交易中' : '已休市'} · 毫秒级原生实时行情
+                        {market.name} · {open ? '常规交易时段' : '常规交易时段外'} · 行情时间以数据源为准
                     </p>
                 </div>
             </header>
@@ -49,7 +63,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <div className="section-head">
                     <div>
                         <h2 className="section-title">核心指数</h2>
-                        <p className="section-sub">原生 Level-1 直连实时行情 (15秒自动刷新 · 点击查看本地分时)</p>
+                        <p className="section-sub">指数快照 · 点击查看本地分时 · 源时间以各标的为准</p>
                     </div>
                     <DataFreshness />
                 </div>
@@ -63,18 +77,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 {/* 行业板块风向标：领涨板块 vs 主力吸筹板块 */}
                 {(market.id === 'cn' || market.id === 'hk' || market.id === 'tw') && (
                     <Suspense fallback={null}>
-                        <SectorFlowPanel />
+                        <SectorFlow selectedMarket={market.id} />
                     </Suspense>
                 )}
 
-                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                    <Panel title="异动领跑" sub={`${market.name}今日核心资产振幅排行 (点击进详情)`}>
-                        <NativeMarketMovers market={market} />
-                    </Panel>
-                    <Panel title="精选报价" sub={`${market.name}核心蓝筹龙头报价 (点击进详情)`}>
-                        <NativeMarketQuotesTable market={market} />
-                    </Panel>
-                </div>
+                <Suspense key={market.id} fallback={<p className="text-xs text-faint">正在加载精选行情...</p>}>
+                    <MarketQuotes market={market} />
+                </Suspense>
 
                 <div className="grid gap-3">
                     <ChineseNewsFlash />

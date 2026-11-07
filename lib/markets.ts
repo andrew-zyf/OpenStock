@@ -1,4 +1,5 @@
 import { isInternationalSymbol } from "@/lib/utils";
+import { identifyMarketAndCode } from "@/lib/market/instrument";
 
 export type MarketId = 'us' | 'cn' | 'hk' | 'tw';
 
@@ -26,10 +27,10 @@ export const MARKETS: Market[] = [
     {
         id: 'us', name: '美股', short: '美股', timeZone: 'America/New_York', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live', native: true,
         pulse: [
-            { symbol: 'SPY', label: '标普 500', finnhub: 'SPY' },
-            { symbol: 'QQQ', label: '纳斯达克 100', finnhub: 'QQQ' },
-            { symbol: 'DIA', label: '道琼斯 30', finnhub: 'DIA' },
-            { symbol: 'IWM', label: '罗素 2000', finnhub: 'IWM' },
+            { symbol: 'SPY', label: '标普 500 ETF', finnhub: 'SPY' },
+            { symbol: 'QQQ', label: '纳斯达克 100 ETF', finnhub: 'QQQ' },
+            { symbol: 'DIA', label: '道琼斯 30 ETF', finnhub: 'DIA' },
+            { symbol: 'IWM', label: '罗素 2000 ETF', finnhub: 'IWM' },
         ],
         groups: [
             { title: '科技先锋', symbols: [['AAPL', 'Apple'], ['MSFT', 'Microsoft'], ['NVDA', 'NVIDIA'], ['GOOGL', 'Alphabet'], ['META', 'Meta'], ['AMD', 'AMD']] },
@@ -56,8 +57,8 @@ export const MARKETS: Market[] = [
     {
         id: 'hk', name: '港股', short: '港股', timeZone: 'Asia/Hong_Kong', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live', native: true,
         pulse: [
-            { symbol: '02800.HK', label: '恒生指数 (盈富)', finnhub: '02800.HK' },
-            { symbol: '03033.HK', label: '恒生科技 (南方)', finnhub: '03033.HK' },
+            { symbol: '02800.HK', label: '盈富基金（恒生指数 ETF）', finnhub: '02800.HK' },
+            { symbol: '03033.HK', label: '南方恒生科技 ETF', finnhub: '03033.HK' },
             { symbol: '00700.HK', label: '腾讯控股', finnhub: '00700.HK' },
             { symbol: '09988.HK', label: '阿里巴巴', finnhub: '09988.HK' },
         ],
@@ -95,9 +96,10 @@ export const marketForCountry = (country?: string | null): MarketId => COUNTRY_M
 
 // Finnhub free can price (and so alert on) US listings and Binance pairs only.
 export const hasFinnhubQuotes = (symbol: string) => {
-    const upper = symbol.toUpperCase();
+    const upper = symbol.trim().toUpperCase();
     if (upper.startsWith('BINANCE:')) return true;
-    return !upper.includes(':') && !isInternationalSymbol(upper);
+    const meta = identifyMarketAndCode(upper);
+    return !upper.includes(':') && meta.market === 'us' && !isInternationalSymbol(meta.normalizedSymbol);
 };
 
 // Is the market trading right now, in its own time zone? Holidays aren't modelled.

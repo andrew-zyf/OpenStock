@@ -94,7 +94,7 @@ export const sendWeeklyNewsSummary = inngest.createFunction(
             try {
                 const subData = await kit.listSubscribers();
                 const subscriberList = subData.subscribers || [];
-                const confirmedCount = subscriberList.filter((s: any) => s.state === 'active').length;
+                const confirmedCount = subscriberList.filter((s: { state?: string }) => s.state === 'active').length;
 
                 console.log(`📋 Target Audience: Found ${subData.total_subscribers} total subscribers in Kit.`);
                 console.log(`✅ Confirmed (Active) Subscribers receiving email: ${confirmedCount}`);
@@ -208,11 +208,19 @@ export const checkStockAlerts = inngest.createFunction(
             await connectToDatabase();
             const now = new Date();
 
-            return await Alert.find({
+            const alerts = await Alert.find({
                 active: true,
                 triggered: false,
                 expiresAt: { $gt: now }
             }).lean();
+            // Inngest persists step results as JSON; pass only the alert fields used below.
+            return alerts.map((alert) => ({
+                _id: String(alert._id),
+                userId: alert.userId,
+                symbol: alert.symbol,
+                targetPrice: alert.targetPrice,
+                condition: alert.condition,
+            }));
         });
 
         if (!activeAlerts || activeAlerts.length === 0) {
@@ -220,7 +228,7 @@ export const checkStockAlerts = inngest.createFunction(
         }
 
         // Step 2: Group by symbol
-        const symbols = [...new Set(activeAlerts.map((a: any) => a.symbol))];
+        const symbols = [...new Set(activeAlerts.map((a) => a.symbol))];
 
         // Step 3: Fetch prices
         const prices = await step.run('fetch-prices', async () => {
@@ -242,10 +250,10 @@ export const checkStockAlerts = inngest.createFunction(
         });
 
         // Step 4: Check conditions
-        type TriggeredAlert = { alert: any; currentPrice: number };
+        type TriggeredAlert = { alert: (typeof activeAlerts)[number]; currentPrice: number };
         const triggeredAlerts: TriggeredAlert[] = [];
 
-        for (const alert of activeAlerts as any[]) {
+        for (const alert of activeAlerts) {
             const currentPrice = prices[alert.symbol];
             if (!currentPrice) continue;
 

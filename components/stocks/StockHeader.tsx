@@ -7,6 +7,9 @@ import { getCompanyProfile, getLiveQuotes } from "@/lib/actions/finnhub.actions"
 import { formatNumber, formatPrice } from "@/lib/utils";
 import { hasFinnhubQuotes } from "@/lib/markets";
 import { getRealtimeQuote } from "@/lib/actions/realtime-market.actions";
+import { alertsEnabled } from '@/lib/market-data';
+import { getInstrumentCapabilities } from '@/lib/market/capabilities';
+import { identifyMarketAndCode } from '@/lib/market/instrument';
 
 // Non-US symbols or TradingView-restricted exchanges (A股, 港股, 台股等) use direct real-time data sources
 async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
@@ -16,28 +19,18 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
     ]);
 
     const company = rt?.name || symbol;
-    const currency = rt?.currency || 'USD';
-    const money = (value?: number) => (value != null && Number.isFinite(value) && value > 0 ? formatPrice(value, currency) : '—');
+    const meta = identifyMarketAndCode(symbol);
+    const currency = rt?.currency || meta.currency;
+    const canAlert = alertsEnabled && getInstrumentCapabilities(symbol).alerts;
+    const money = (value?: number) => (value != null && Number.isFinite(value) ? formatPrice(value, currency) : '—');
 
-    const formatVolUnit = (vol?: number) => {
-        if (!vol || vol <= 0) return '—';
-        if (rt?.market === 'cn' || rt?.market === 'hk') {
-            if (vol >= 1e8) return `${(vol / 1e8).toFixed(2)}亿手`;
-            if (vol >= 1e4) return `${(vol / 1e4).toFixed(2)}万手`;
-            return `${Math.round(vol).toLocaleString()}手`;
-        }
-        if (vol >= 1e9) return `${(vol / 1e9).toFixed(2)}B`;
-        if (vol >= 1e6) return `${(vol / 1e6).toFixed(2)}M`;
-        if (vol >= 1e3) return `${(vol / 1e3).toFixed(2)}K`;
-        return Math.round(vol).toLocaleString();
+    const formatVolUnit = (shares?: number) => {
+        if (shares == null || !Number.isFinite(shares)) return '—';
+        const divisor = meta.market === 'cn' ? 100 : meta.market === 'tw' ? 1000 : 1;
+        const unit = meta.market === 'cn' ? '手（100股）' : meta.market === 'tw' ? '张（1000股）' : '股';
+        return `${formatNumber(shares / divisor)}${unit}`;
     };
-
-    const formatAmount = (amt?: number) => {
-        if (!amt || amt <= 0) return '—';
-        if (amt >= 1e8) return `${(amt / 1e8).toFixed(2)}亿元`;
-        if (amt >= 1e4) return `${(amt / 1e4).toFixed(2)}万元`;
-        return `${Math.round(amt).toLocaleString()}`;
-    };
+    const formatAmount = (amt?: number) => amt == null ? '—' : `${formatNumber(amt)} ${currency}`;
 
     const stats = [
         { label: '今开', icon: CalendarClock, value: money(rt?.open), hint: '今日开盘价' },
@@ -46,24 +39,18 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
         { label: '最低', icon: MoveVertical, value: money(rt?.low), hint: '今日最低价', valueClass: 'text-down' },
         { label: '成交量', icon: Landmark, value: formatVolUnit(rt?.volume), hint: '今日累计成交量' },
         { label: '成交额', icon: Landmark, value: formatAmount(rt?.turnover), hint: '今日累计成交金额' },
-        { label: '换手率', icon: Gauge, value: rt?.turnoverRate ? `${rt.turnoverRate.toFixed(2)}%` : '—', hint: '筹码换手活跃度' },
-        { label: '振幅', icon: MoveVertical, value: rt?.amplitude ? `${rt.amplitude.toFixed(2)}%` : '—', hint: '日内最高与最低波动幅度' },
-        { label: '总市值', icon: Landmark, value: rt?.marketCap ? formatNumber(rt.marketCap) : '—', hint: `计价货币: ${currency}` },
+        { label: '换手率', icon: Gauge, value: rt?.turnoverRate != null ? `${rt.turnoverRate.toFixed(2)}%` : '—', hint: '筹码换手活跃度' },
+        { label: '振幅', icon: MoveVertical, value: rt?.amplitude != null ? `${rt.amplitude.toFixed(2)}%` : '—', hint: '日内最高与最低波动幅度' },
+        { label: '总市值', icon: Landmark, value: rt?.marketCap != null ? formatAmount(rt.marketCap) : '—', hint: `计价货币: ${currency}` },
         {
             label: '市盈(PE) / 市净(PB)',
             icon: Gauge,
-            value: `${rt?.pe ? rt.pe.toFixed(1) : '—'} / ${rt?.pb ? rt.pb.toFixed(2) : '—'}`,
+            value: `${rt?.pe != null ? rt.pe.toFixed(1) : '—'} / ${rt?.pb != null ? rt.pb.toFixed(2) : '—'}`,
             hint: '动态市盈率 PE-TTM 与市净率 PB',
         },
     ];
 
-    const sourceLabel = rt?.market === 'cn'
-        ? 'A股实时行情 (毫秒级直连)'
-        : rt?.market === 'hk'
-            ? '港股实时行情 (官方合作源)'
-            : rt?.market === 'tw'
-                ? '台股实时行情 (台湾证交所官方)'
-                : '实时行情数据源';
+    const sourceLabel = rt ? `${rt.source} · ${rt.asOf ? `截至 ${rt.asOf}` : '源时间未提供'}` : '行情暂不可用';
 
     return (
         <section className="hatch">
@@ -78,15 +65,13 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
                     </div>
                 </div>
 
-                {rt ? (
-                    <StockLivePrice symbol={symbol} initial={rt} currency={currency} />
-                ) : null}
+                <StockLivePrice symbol={symbol} initial={rt} currency={currency} />
 
                 <div className="flex items-center gap-2">
                     <WatchlistButton symbol={symbol} company={company} isInWatchlist={isInWatchlist} />
-                    <CreateAlertModal symbol={symbol} currentPrice={rt?.price} currency={currency}>
+                    {canAlert && <CreateAlertModal symbol={symbol} currentPrice={rt?.price} currency={currency}>
                         <button type="button" className="btn btn-primary"><Bell /> 设置预警</button>
-                    </CreateAlertModal>
+                    </CreateAlertModal>}
                 </div>
             </div>
 
@@ -96,7 +81,7 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
                         <span className="flex items-center gap-1.5 text-[12px] text-faint">
                             <Icon className="size-3.5 text-muted-foreground" /> {label}
                         </span>
-                        <span className={`num truncate text-[15px] font-semibold ${valueClass || 'text-foreground'}`}>{value}</span>
+                        <span className={`num truncate text-[15px] font-semibold ${value === '—' ? 'text-faint' : valueClass || 'text-foreground'}`}>{value}</span>
                     </div>
                 ))}
             </div>
@@ -107,26 +92,28 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
 export default async function StockHeader({ symbol }: { symbol: string }) {
     if (!hasFinnhubQuotes(symbol)) return <RealtimeMarketHeader symbol={symbol} />;
 
+    const meta = identifyMarketAndCode(symbol);
+    const canAlert = alertsEnabled && getInstrumentCapabilities(symbol).alerts;
     const [isInWatchlist, quotes, profile] = await Promise.all([
         isStockInWatchlist(symbol),
         getLiveQuotes([symbol]),
-        getCompanyProfile(symbol),
+        meta.kind === 'equity' ? getCompanyProfile(symbol) : Promise.resolve(null),
     ]);
     const quote = quotes[symbol];
 
     const currency = profile?.currency || 'USD';
     const company = profile?.name || symbol;
-    const money = (value?: number) => (value ? formatPrice(value, currency) : '—');
+    const money = (value?: number) => (value != null ? formatPrice(value, currency) : '—');
 
-    const amp = quote?.h && quote?.l && quote?.pc ? ((quote.h - quote.l) / quote.pc) * 100 : 0;
+    const amp = quote?.h != null && quote?.l != null && quote?.pc != null && quote.pc > 0 ? ((quote.h - quote.l) / quote.pc) * 100 : undefined;
 
     const stats = [
         { label: '今开', icon: CalendarClock, value: money(quote?.o), hint: '今日开盘价' },
         { label: '昨收', icon: Gauge, value: money(quote?.pc), hint: '上一交易日收盘价' },
         { label: '最高', icon: MoveVertical, value: money(quote?.h), hint: '今日最高价', valueClass: 'text-up' },
         { label: '最低', icon: MoveVertical, value: money(quote?.l), hint: '今日最低价', valueClass: 'text-down' },
-        { label: '日内振幅', icon: MoveVertical, value: amp ? `${amp.toFixed(2)}%` : '—', hint: '最高与最低振幅' },
-        { label: '总市值', icon: Landmark, value: profile?.marketCapitalization ? formatNumber(profile.marketCapitalization) : '—', hint: `计价货币: ${currency}` },
+        { label: '日内振幅', icon: MoveVertical, value: amp != null ? `${amp.toFixed(2)}%` : '—', hint: '最高与最低振幅' },
+        { label: '总市值', icon: Landmark, value: profile?.marketCapitalization != null ? `${formatNumber(profile.marketCapitalization)} ${currency}` : '—', hint: `计价货币: ${currency}` },
     ];
 
     return (
@@ -150,9 +137,9 @@ export default async function StockHeader({ symbol }: { symbol: string }) {
 
                 <div className="flex items-center gap-2">
                     <WatchlistButton symbol={symbol} company={company} isInWatchlist={isInWatchlist} />
-                    <CreateAlertModal symbol={symbol} currentPrice={quote?.c} currency={currency}>
+                    {canAlert && <CreateAlertModal symbol={symbol} currentPrice={quote?.c} currency={currency}>
                         <button type="button" className="btn btn-primary"><Bell /> 设置预警</button>
-                    </CreateAlertModal>
+                    </CreateAlertModal>}
                 </div>
             </div>
 

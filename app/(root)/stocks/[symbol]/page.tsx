@@ -17,7 +17,8 @@ import {
 import { getStockSentimentInsights } from '@/lib/actions/adanos.actions';
 import { getStockMetrics } from '@/lib/actions/finnhub.actions';
 import { formatSymbolForTradingView } from '@/lib/utils';
-import { identifyMarketAndCode } from "@/lib/realtime-market";
+import { identifyMarketAndCode } from "@/lib/market/instrument";
+import { getInstrumentCapabilities } from '@/lib/market/capabilities';
 
 const scriptUrl = `https://s3.tradingview.com/external-embedding/embed-widget-`;
 
@@ -46,6 +47,8 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
     const { symbol: rawSymbol } = await params;
     const symbol = decodeURIComponent(rawSymbol).toUpperCase();
     const meta = identifyMarketAndCode(symbol);
+    const capabilities = getInstrumentCapabilities(symbol);
+    const corporate = meta.kind === 'equity';
     const isChineseMarket = meta.market === 'cn' || meta.market === 'hk' || meta.market === 'tw';
     const tvSymbol = isChineseMarket ? symbol : formatSymbolForTradingView(symbol);
 
@@ -60,12 +63,16 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                 <div className="flex min-w-0 flex-col gap-3">
                     <YahooStockChart symbol={symbol} />
 
-                    {isChineseMarket ? (
+                    {!corporate ? (
+                        <Panel title={meta.kind === 'index' ? '指数信息' : meta.kind === 'etf' ? '基金信息' : '标的信息'} sub={`${meta.exchange} · ${meta.currency}`}>
+                            <p className="p-4 text-xs text-faint">{meta.kind === 'index' ? '该标的是指数，公司档案与公司财务不适用。' : meta.kind === 'etf' ? '该标的是 ETF，公司档案与公司财务不适用。' : '当前标的类型或数据覆盖尚未确认。'}</p>
+                        </Panel>
+                    ) : isChineseMarket ? (
                         <>
-                            <Suspense fallback={null}>
+                            {capabilities.financials ? <Suspense fallback={null}>
                                 <NativeFinancials symbol={symbol} />
-                            </Suspense>
-                            <StockIntelligenceCard symbol={symbol} />
+                            </Suspense> : <Panel title="财务数据"><p className="p-4 text-xs text-faint">当前标的暂不支持财务数据</p></Panel>}
+                            {meta.exchangeId !== 'BSE' && <StockIntelligenceCard symbol={symbol} />}
                         </>
                     ) : (
                         <>
@@ -97,21 +104,21 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                                     height={400}
                                 />
                             </Panel>
-                            <Suspense fallback={null}>
+                            {corporate && <Suspense fallback={null}>
                                 <DividendYield symbol={symbol} />
-                            </Suspense>
+                            </Suspense>}
                         </>
                     )}
 
-                    <Suspense fallback={null}>
+                    {corporate && <Suspense fallback={null}>
                         <Sentiment symbol={symbol} />
-                    </Suspense>
+                    </Suspense>}
 
                     {/* 公司概况：A股、港股、台股彻底使用原生真实档案替换 TradingView */}
-                    {isChineseMarket ? (
-                        <Suspense fallback={null}>
+                    {corporate && (isChineseMarket ? (
+                        capabilities.profile ? <Suspense fallback={null}>
                             <NativeCompanyProfile symbol={symbol} />
-                        </Suspense>
+                        </Suspense> : <Panel title="公司概况"><p className="p-4 text-xs text-faint">当前标的暂不支持公司档案</p></Panel>
                     ) : (
                         <Panel title="公司概况" sub="主营业务与基本资料">
                             <TradingViewWidget
@@ -120,7 +127,7 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                                 height={440}
                             />
                         </Panel>
-                    )}
+                    ))}
                 </div>
             </div>
         </>

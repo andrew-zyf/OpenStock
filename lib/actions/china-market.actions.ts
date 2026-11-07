@@ -1,5 +1,7 @@
 'use server';
 
+import { optionalNumber } from '@/lib/market/contracts';
+
 export type ChinaMarketMacro = {
     totalTurnoverYi: number;
     totalTurnoverText: string;
@@ -16,12 +18,12 @@ export type ChinaMarketMacro = {
 export type SectorFlowItem = {
     code: string;
     name: string;
-    changePercent: number;
-    mainNetInflow: number;     // 主力净流入 (元)
-    mainNetRatio: number;      // 主力净占比 (%)
-    leaderName: string;        // 领涨股名称
-    leaderSymbol: string;      // 领涨股站内代码 (如 600025.SS / 000595.SZ)
-    leaderChangePercent: number;
+    changePercent?: number;
+    mainNetInflow?: number;    // 主力净流入 (元)，缺失与零分开
+    mainNetRatio?: number;     // 主力净占比 (%)
+    leaderName: string;
+    leaderSymbol: string;      // 来源缺少领涨股时为空
+    leaderChangePercent?: number;
 };
 
 export type ChineseNewsItem = {
@@ -138,10 +140,14 @@ export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
     }
 }
 
-export async function getChinaSectorRankings(): Promise<{
+export type ChinaSectorRankings = {
     topGainers: SectorFlowItem[];
     topInflows: SectorFlowItem[];
-}> {
+    errors?: { topGainers?: string; topInflows?: string };
+    fetchedAt: string;
+};
+
+export async function getChinaSectorRankings(): Promise<ChinaSectorRankings> {
     const parseSectorList = (diff: Record<string, unknown>[]): SectorFlowItem[] => {
         if (!Array.isArray(diff)) return [];
         const seenNames = new Set<string>();
@@ -153,47 +159,44 @@ export async function getChinaSectorRankings(): Promise<{
 
             const leaderCode = String(item.f140 || '');
             const leaderMkt = Number(item.f141);
-            const suffix = leaderMkt === 1 || leaderCode.startsWith('6') ? '.SS' : '.SZ';
-            const leaderSymbol = leaderCode ? `${leaderCode}${suffix}` : '600519.SS';
+            const suffix = leaderMkt === 1 ? '.SS' : leaderMkt === 0 ? '.SZ' : undefined;
+            const leaderSymbol = /^\d{6}$/.test(leaderCode) && suffix ? `${leaderCode}${suffix}` : '';
 
             out.push({
                 code: String(item.f12 || ''),
                 name: rawName,
-                changePercent: Number(item.f3) || 0,
-                mainNetInflow: Number(item.f62) || 0,
-                mainNetRatio: Number(item.f184) || 0,
+                changePercent: optionalNumber(item.f3),
+                mainNetInflow: optionalNumber(item.f62),
+                mainNetRatio: optionalNumber(item.f184),
                 leaderName: String(item.f128 || '—'),
                 leaderSymbol,
-                leaderChangePercent: Number(item.f136) || 0,
+                leaderChangePercent: optionalNumber(item.f136),
             });
             if (out.length >= 6) break;
         }
         return out;
     };
 
-    try {
-        const [gainRes, inflowRes] = await Promise.all([
-            fetch(
-                'http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=15&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50&fields=f12,f14,f2,f3,f62,f184,f128,f140,f141,f136',
-                { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 } }
-            ),
-            fetch(
-                'http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=15&po=1&np=1&fltt=2&invt=2&fid=f62&fs=m:90+t:2+f:!50&fields=f12,f14,f2,f3,f62,f184,f128,f140,f141,f136',
-                { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 } }
-            ),
-        ]);
-
-        const gainJson = gainRes.ok ? await gainRes.json() : null;
-        const inflowJson = inflowRes.ok ? await inflowRes.json() : null;
-
-        return {
-            topGainers: parseSectorList(gainJson?.data?.diff || []),
-            topInflows: parseSectorList(inflowJson?.data?.diff || []),
-        };
-    } catch (e) {
-        console.error('getChinaSectorRankings error', e);
-        return { topGainers: [], topInflows: [] };
-    }
+    const load = async (field: 'f3' | 'f62') => {
+        const res = await fetch(
+            `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=15&po=1&np=1&fltt=2&invt=2&fid=${field}&fs=m:90+t:2+f:!50&fields=f12,f14,f2,f3,f62,f184,f128,f140,f141,f136`,
+            { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 }, signal: AbortSignal.timeout(5000) },
+        );
+        if (!res.ok) throw new Error(`板块来源响应 ${res.status}`);
+        const json = await res.json();
+        if (!Array.isArray(json?.data?.diff)) throw new Error('板块来源数据格式不可用');
+        return parseSectorList(json.data.diff);
+    };
+    const [gainers, inflows] = await Promise.allSettled([load('f3'), load('f62')]);
+    return {
+        topGainers: gainers.status === 'fulfilled' ? gainers.value : [],
+        topInflows: inflows.status === 'fulfilled' ? inflows.value : [],
+        errors: {
+            topGainers: gainers.status === 'rejected' ? '领涨板块更新失败' : undefined,
+            topInflows: inflows.status === 'rejected' ? '资金板块更新失败' : undefined,
+        },
+        fetchedAt: new Date().toISOString(),
+    };
 }
 
 export async function getChineseLiveNews(): Promise<ChineseNewsItem[]> {

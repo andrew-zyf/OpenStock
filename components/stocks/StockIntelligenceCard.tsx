@@ -1,33 +1,35 @@
 'use client';
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { BookOpen, FileText, Newspaper, ExternalLink } from "lucide-react";
 import Panel from "@/components/Panel";
-import { getStockIntelligence, type StockIntelligenceData } from "@/lib/actions/stock-intelligence.actions";
+import { getStockIntelligence, type StockIntelligenceData, type IntelligenceStatus } from "@/lib/actions/stock-intelligence.actions";
+import { useMarketResource } from "@/hooks/useMarketResource";
 
 type TabType = 'news' | 'reports' | 'announcements';
 
+export function selectIntelligenceTab(data: StockIntelligenceData | undefined, requested: TabType): TabType {
+    const populated = (['news', 'reports', 'announcements'] as const).filter((key) => (data?.[key].length ?? 0) > 0);
+    return populated.includes(requested) ? requested : populated[0] || 'news';
+}
+
+function emptyLabel(status: IntelligenceStatus | undefined, subject: string): string {
+    if (status === 'unsupported') return `当前市场或标的暂未接入${subject}来源`;
+    if (status === 'error') return `${subject}来源获取失败，稍后自动重试`;
+    return `暂无该标的近期${subject}`;
+}
+
 export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
-    const [data, setData] = useState<StockIntelligenceData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [tab, setTab] = useState<TabType>('news');
-
-    useEffect(() => {
-        let active = true;
-        setLoading(true);
-        getStockIntelligence(symbol).then((res) => {
-            if (active) {
-                setData(res);
-                setLoading(false);
-            }
-        });
-        return () => {
-            active = false;
-        };
-    }, [symbol]);
-
-    const hasReports = (data?.reports?.length ?? 0) > 0;
-    const hasAnnouncements = (data?.announcements?.length ?? 0) > 0;
+    const { data, loading, error, stale } = useMarketResource({
+        key: symbol,
+        loader: () => getStockIntelligence(symbol),
+        intervalMs: 5 * 60 * 1000,
+    });
+    const [selection, setSelection] = useState<{ symbol: string; tab: TabType }>({ symbol, tab: 'news' });
+    const tab = selectIntelligenceTab(data, selection.symbol === symbol ? selection.tab : 'news');
+    const setTab = (next: TabType) => setSelection({ symbol, tab: next });
+    const hasReports = (data?.reports.length ?? 0) > 0;
+    const hasAnnouncements = (data?.announcements.length ?? 0) > 0;
 
     const action = (
         <div className="flex items-center gap-1 rounded-lg bg-page/60 p-0.5 border border-line text-xs">
@@ -71,7 +73,7 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
     return (
         <Panel
             title="个股深度情报中心"
-            sub={`${data?.name || symbol} · 专属实时快讯、券商机构研报盈利预测与交易所正式公告`}
+            sub={`${data?.name || symbol} · 个股资讯、单家券商预测与公告转载 · 可见时每5分钟刷新`}
             action={action}
         >
             <div className="p-4">
@@ -79,9 +81,15 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
                     <div className="flex h-40 items-center justify-center text-xs text-faint">
                         正在检索个股专属资讯、券商研报与公司公告...
                     </div>
+                ) : error && !data ? (
+                    <p role="status" className="py-8 text-center text-xs text-faint">个股情报获取失败，稍后自动重试</p>
                 ) : (
                     <>
-                        {/* 1. 个股实时要闻 */}
+                        {stale && <p role="status" className="mb-3 text-xs text-faint">刷新失败，显示上次获取的资讯</p>}
+                        {data?.status[tab] === 'partial' && <p role="status" className="mb-3 text-xs text-faint">部分来源获取失败，以下为已获取的资讯</p>}
+                        {!hasReports && <p className="mb-2 text-[11px] text-faint">{emptyLabel(data?.status.reports, '券商研报')}</p>}
+                        {!hasAnnouncements && <p className="mb-3 text-[11px] text-faint">{emptyLabel(data?.status.announcements, '公告转载')}</p>}
+                        {/* 1. 个股要闻 */}
                         {tab === 'news' && (
                             <div className="divide-y divide-line/60">
                                 {data?.news?.length ? (
@@ -113,7 +121,7 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
                                         </a>
                                     ))
                                 ) : (
-                                    <p className="py-8 text-center text-xs text-faint">暂无该标的近期专属新闻报道</p>
+                                    <p className="py-8 text-center text-xs text-faint">{emptyLabel(data?.status.news, '专属新闻报道')}</p>
                                 )}
                             </div>
                         )}
@@ -142,12 +150,12 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
                                         </div>
 
                                         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground bg-page/40 px-3 py-1.5 rounded border border-line/60">
-                                            <span>评级: <strong className="text-up">{rep.rating}</strong></span>
+                                            <span>单家机构评级: <strong className="text-foreground">{rep.rating || '未提供'}</strong></span>
                                             {rep.thisYearEps && (
-                                                <span>今年预测 EPS: <strong className="mono text-foreground">{rep.thisYearEps}</strong> (PE: {rep.thisYearPe || '—'})</span>
+                                                <span>该机构报告当年预测 EPS: <strong className="mono text-foreground">{rep.thisYearEps}</strong> (PE: {rep.thisYearPe || '—'})</span>
                                             )}
                                             {rep.nextYearEps && (
-                                                <span>明年预测 EPS: <strong className="mono text-foreground">{rep.nextYearEps}</strong> (PE: {rep.nextYearPe || '—'})</span>
+                                                <span>该机构报告次年预测 EPS: <strong className="mono text-foreground">{rep.nextYearEps}</strong> (PE: {rep.nextYearPe || '—'})</span>
                                             )}
                                         </div>
                                     </a>
@@ -155,7 +163,7 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
                             </div>
                         )}
 
-                        {/* 3. 公司官方公告 */}
+                        {/* 3. 公告转载 */}
                         {tab === 'announcements' && (
                             <div className="divide-y divide-line/60">
                                 {data?.announcements?.map((ann) => (
@@ -168,7 +176,7 @@ export default function StockIntelligenceCard({ symbol }: { symbol: string }) {
                                     >
                                         <div className="flex items-center gap-2 min-w-0">
                                             <span className="shrink-0 rounded bg-page px-2 py-0.5 text-[10px] font-semibold text-faint border border-line">
-                                                {ann.category}
+                                                {ann.category} · {ann.source}
                                             </span>
                                             <span className="truncate text-xs font-medium text-foreground group-hover:text-brand-ink">
                                                 {ann.title}

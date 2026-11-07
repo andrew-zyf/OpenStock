@@ -4,6 +4,8 @@ import { connectToDatabase } from '@/database/mongoose';
 import { Watchlist } from '@/database/models/watchlist.model';
 import { revalidatePath } from 'next/cache';
 import { requireUserId } from '@/lib/better-auth/auth';
+import { getSymbolAliases } from '@/lib/utils';
+import { identifyMarketAndCode } from '@/lib/market/instrument';
 
 // Tickers as Finnhub writes them (AAPL, BRK.B, RELIANCE.NS, M&M.NS, 0700.HK, BINANCE:BTCUSDT). Server actions take
 // untrusted input, and every symbol here becomes Finnhub calls on /watchlist and in the news digest.
@@ -14,25 +16,24 @@ const MAX_WATCHLIST = 50;
 
 export async function addToWatchlist(symbol: string, company: string) {
     const userId = await requireUserId();
-    const ticker = String(symbol ?? '').trim().toUpperCase();
-    if (!SYMBOL_PATTERN.test(ticker)) throw new Error('无效的股票代码');
+    const input = String(symbol ?? '').trim().toUpperCase();
+    if (!SYMBOL_PATTERN.test(input)) throw new Error('无效的股票代码');
+    const ticker = identifyMarketAndCode(input).normalizedSymbol;
     const name = String(company ?? '').trim().slice(0, 120);
     try {
         await connectToDatabase();
 
-        if (!(await Watchlist.exists({ userId, symbol: ticker })) && (await Watchlist.countDocuments({ userId })) >= MAX_WATCHLIST) {
+        const existing = await Watchlist.findOne({ userId, symbol: { $in: getSymbolAliases(input) } });
+        if (existing) return { ...JSON.parse(JSON.stringify(existing)), symbol: ticker };
+
+        if ((await Watchlist.countDocuments({ userId })) >= MAX_WATCHLIST) {
             return { error: `自选列表已满（上限 ${MAX_WATCHLIST} 只股票），请移除部分后再添加。` };
         }
 
-        // Upsert to avoid duplicates/errors if it already exists
+        // Keep saved metadata and addedAt intact if another request inserted it.
         const newItem = await Watchlist.findOneAndUpdate(
             { userId, symbol: ticker },
-            {
-                userId,
-                symbol: ticker,
-                company: name,
-                addedAt: new Date()
-            },
+            { $setOnInsert: { userId, symbol: ticker, company: name, addedAt: new Date() } },
             { upsert: true, new: true }
         );
 
@@ -48,7 +49,7 @@ export async function removeFromWatchlist(symbol: string) {
     const userId = await requireUserId();
     try {
         await connectToDatabase();
-        await Watchlist.findOneAndDelete({ userId, symbol: symbol.toUpperCase() });
+        await Watchlist.deleteMany({ userId, symbol: { $in: getSymbolAliases(symbol) } });
         revalidatePath('/', 'layout'); // sidebar lists the watchlist on every page
         return { success: true };
     } catch (error) {
@@ -62,7 +63,26 @@ export async function getUserWatchlist() {
     try {
         await connectToDatabase();
         const watchlist = await Watchlist.find({ userId }).sort({ addedAt: -1 });
-        return JSON.parse(JSON.stringify(watchlist));
+        type SavedItem = { symbol: string; company: string; addedAt: string; [key: string]: unknown };
+        const saved: SavedItem[] = JSON.parse(JSON.stringify(watchlist));
+        const canonicalItems = new Map<string, SavedItem>();
+        for (const item of saved) {
+            const canonical = identifyMarketAndCode(item.symbol).normalizedSymbol;
+            const existing = canonicalItems.get(canonical);
+            if (!existing) {
+                canonicalItems.set(canonical, { ...item, symbol: canonical });
+                continue;
+            }
+            const earliest = new Date(item.addedAt) < new Date(existing.addedAt) ? item : existing;
+            const usefulName = [existing.company, item.company].find((name) =>
+                name?.trim() && !getSymbolAliases(canonical).includes(name.trim().toUpperCase()));
+            canonicalItems.set(canonical, {
+                ...earliest,
+                symbol: canonical,
+                company: usefulName || earliest.company,
+            });
+        }
+        return [...canonicalItems.values()].sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
     } catch (error) {
         console.error('Error fetching watchlist:', error);
         return [];
@@ -74,7 +94,7 @@ export async function isStockInWatchlist(symbol: string) {
     const userId = await requireUserId();
     try {
         await connectToDatabase();
-        const item = await Watchlist.findOne({ userId, symbol: symbol.toUpperCase() });
+        const item = await Watchlist.findOne({ userId, symbol: { $in: getSymbolAliases(symbol) } });
         return !!item;
     } catch (error) {
         console.error('Error checking watchlist status:', error);

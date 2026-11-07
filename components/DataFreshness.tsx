@@ -1,23 +1,30 @@
 'use client';
 
-import { useEffect, useState } from "react";
-import { isRealtime } from "@/lib/market-data";
+import { useEffect, useState } from 'react';
+import { isRealtime } from '@/lib/market-data';
 
-// Honest label for how old a number is: "Live" in realtime mode, otherwise the time of the last trade.
-// The time is formatted after mount, in the viewer's own time zone, so server and browser never disagree.
-const DataFreshness = ({ tradeTime }: { tradeTime?: number }) => {
-    const [asOf, setAsOf] = useState<string | null>(null);
-
+const DataFreshness = ({ tradeTime, asOf, source, fetchedAt, stale = false, loading = false }: {
+    tradeTime?: number; asOf?: string; source?: string; fetchedAt?: string; stale?: boolean; loading?: boolean;
+}) => {
+    const [time, setTime] = useState<string | null>(null);
+    const [fetched, setFetched] = useState<string | null>(null);
     useEffect(() => {
-        setAsOf(tradeTime
-            ? new Date(tradeTime * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-            : null);
-    }, [tradeTime]);
-
-    if (isRealtime) {
-        return <span className="inline-flex items-center gap-1.5 text-[12px] text-faint"><span className="live-dot" /> 实时行情 · 15秒更新</span>;
-    }
-    return <span className="text-[12px] text-faint">{asOf ? `截至 ${asOf}` : '延时行情'} · 每小时刷新</span>;
+        const format = (value?: string | number) => {
+            if (!value) return null;
+            const date = new Date(value);
+            return Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', {
+                month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit',
+            }) : null;
+        };
+        setTime(format(asOf || (tradeTime && tradeTime > 0 ? tradeTime * 1000 : undefined)));
+        setFetched(format(fetchedAt));
+    }, [tradeTime, asOf, fetchedAt]);
+    return <span className="text-[12px] text-faint">
+        {source ? `${source} · ` : ''}{time ? `截至 ${time}` : '源时间未提供'}
+        {fetched ? ` · 获取于 ${fetched}` : ''}
+        {stale ? ' · 更新失败，保留上次数据' : loading ? ' · 加载中' : ''}
+        {' · '}{isRealtime ? '15秒轮询' : '每小时轮询'}
+    </span>;
 };
 
 export default DataFreshness;
