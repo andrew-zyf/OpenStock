@@ -4,10 +4,12 @@ import {
     fetchRealtimeQuotes,
     fetchUnifiedChartSeries,
     fetchLevel1OrderBook,
+    fetchCapitalFlow,
     type UnifiedQuote,
     type ChartSeries,
     type ChartPeriod,
     type Level1OrderBook,
+    type CapitalFlowData,
 } from "@/lib/realtime-market";
 
 export async function getRealtimeQuote(symbol: string): Promise<UnifiedQuote | null> {
@@ -28,4 +30,8 @@ export async function getUnifiedChartSeries(
 
 export async function getLevel1OrderBook(symbol: string): Promise<Level1OrderBook | null> {
     return await fetchLevel1OrderBook(symbol);
+}
+
+export async function getCapitalFlow(symbol: string): Promise<CapitalFlowData | null> {
+    return await fetchCapitalFlow(symbol);
 }

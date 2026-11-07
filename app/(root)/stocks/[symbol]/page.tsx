@@ -3,6 +3,7 @@ import StockHeader, { StockHeaderSkeleton } from "@/components/stocks/StockHeade
 import StockSentimentCard from "@/components/stocks/StockSentimentCard";
 import YahooStockChart from "@/components/stocks/YahooStockChart";
 import OrderBookCard from "@/components/stocks/OrderBookCard";
+import CapitalFlowCard from "@/components/stocks/CapitalFlowCard";
 import NativeFinancials from "@/components/stocks/NativeFinancials";
 import NativeCompanyProfile from "@/components/stocks/NativeCompanyProfile";
 import TradingViewWidget from "@/components/TradingViewWidget";
@@ -73,23 +74,27 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                     )}
                 </div>
 
-                {/* 右侧边栏：五档买卖盘口 / 技术分析、股息、情绪与公司档案 */}
+                {/* 右侧边栏：五档买卖盘口+逐笔明细、主力资金流向、情绪与公司档案 */}
                 <div className="flex min-w-0 flex-col gap-3">
                     {isChineseMarket ? (
-                        <OrderBookCard symbol={symbol} />
+                        <>
+                            <OrderBookCard symbol={symbol} />
+                            <CapitalFlowCard symbol={symbol} />
+                        </>
                     ) : (
-                        <Panel title="技术分析" sub="震荡指标与移动均线 (1小时周期)">
-                            <TradingViewWidget
-                                scriptUrl={`${scriptUrl}technical-analysis.js`}
-                                config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(tvSymbol)}
-                                height={400}
-                            />
-                        </Panel>
+                        <>
+                            <Panel title="技术分析" sub="震荡指标与移动均线 (1小时周期)">
+                                <TradingViewWidget
+                                    scriptUrl={`${scriptUrl}technical-analysis.js`}
+                                    config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(tvSymbol)}
+                                    height={400}
+                                />
+                            </Panel>
+                            <Suspense fallback={null}>
+                                <DividendYield symbol={symbol} />
+                            </Suspense>
+                        </>
                     )}
-
-                    <Suspense fallback={null}>
-                        <DividendYield symbol={symbol} />
-                    </Suspense>
 
                     <Suspense fallback={null}>
                         <Sentiment symbol={symbol} />

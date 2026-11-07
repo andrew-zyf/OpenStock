@@ -356,65 +356,126 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
     }
 }
 
+async function fetchTencentSmartbox(query: string): Promise<StockWithWatchlistStatus[]> {
+    try {
+        const res = await fetch(`https://smartbox.gtimg.cn/s3/?v=2&q=${encodeURIComponent(query)}&t=all`, {
+            headers: { Referer: 'https://gu.qq.com/' },
+            cache: 'no-store',
+        });
+        if (!res.ok) return [];
+        const text = await res.text();
+        const match = text.match(/v_hint="([^"]*)"/);
+        if (!match || !match[1] || match[1] === 'N') return [];
+
+        const items = match[1].split('^');
+        const out: StockWithWatchlistStatus[] = [];
+
+        for (const item of items) {
+            const f = item.split('~');
+            if (f.length < 5) continue;
+            const mkt = f[0].toLowerCase();
+            const rawCode = f[1];
+            const rawName = f[2].replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+            const pinyin = f[3]?.toUpperCase() || '';
+            const secType = f[4];
+
+            // Skip bonds or unknown funds unless ETF/GP/ZS
+            if (!['GP-A', 'GP', 'ETF', 'ZS', 'KJ'].includes(secType)) continue;
+
+            let symbol = '';
+            let exchange = '';
+            let typeLabel = secType === 'ETF' ? 'ETF基金' : secType === 'ZS' ? '核心指数' : '股票';
+
+            if (mkt === 'sh') {
+                symbol = `${rawCode}.SS`;
+                exchange = '上交所 A股';
+            } else if (mkt === 'sz') {
+                symbol = `${rawCode}.SZ`;
+                exchange = '深交所 A股';
+            } else if (mkt === 'hk') {
+                symbol = `${rawCode.padStart(5, '0')}.HK`;
+                exchange = '港交所 HKEX';
+            } else if (mkt === 'us') {
+                symbol = rawCode.split('.')[0].toUpperCase();
+                exchange = '美股 US';
+            } else {
+                continue;
+            }
+
+            out.push({
+                symbol,
+                name: pinyin ? `${rawName} (${pinyin})` : rawName,
+                exchange,
+                type: typeLabel,
+                isInWatchlist: false,
+            });
+        }
+        return out;
+    } catch {
+        return [];
+    }
+}
+
 export const searchStocks = cache(async (query?: string): Promise<StockWithWatchlistStatus[]> => {
     try {
-        if (FINNHUB_KEYS.length === 0) {
-            // If no token, log and return empty to avoid throwing per requirements
-            console.error('Error in stock search:', new Error('FINNHUB API key is not configured'));
-            return [];
-        }
-
         const trimmed = typeof query === 'string' ? query.trim() : '';
 
-        // Chinese stock matching (Pinyin, 6-digit pure code, Chinese name keywords)
-        const localMatches = trimmed ? findChineseStocks(trimmed) : [];
-        const localCandidates: StockWithWatchlistStatus[] = localMatches.map((c) => ({
-            symbol: c.symbol,
-            name: c.name,
-            exchange: c.exchange,
-            type: c.type,
-            isInWatchlist: false,
-        }));
-
-        let results: SearchStockCandidate[] = [];
-
         if (!trimmed) {
-            // Shown in the palette on every page, so no API calls: Finnhub's free tier is 60 req/min
-            results = POPULAR_STOCKS.map(({ symbol, name, exchange }) => ({
+            return POPULAR_STOCKS.map(({ symbol, name, exchange }) => ({
                 symbol,
-                description: name,
-                displaySymbol: symbol,
-                type: 'Common Stock',
-                __exchange: exchange,
+                name,
+                exchange,
+                type: '热门标的',
+                isInWatchlist: false,
             }));
-        } else {
-            // A public server action: only signed-in users may spend Finnhub quota on searches
-            if (!(await getSession())?.user) return localCandidates.slice(0, 15);
-            const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}`;
-            const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
-            results = Array.isArray(data?.result) ? data.result : [];
         }
 
-        const seenSymbols = new Set(localCandidates.map((c) => c.symbol.toUpperCase()));
-        const mapped: StockWithWatchlistStatus[] = results
-            .map((r) => {
-                const upper = (r.symbol || '').toUpperCase();
-                const name = r.description || upper;
-                const exchangeFromProfile = r.__exchange;
-                const exchange = getExchangeLabel(upper, exchangeFromProfile);
-                const type = r.type || 'Stock';
-                const item: StockWithWatchlistStatus = {
-                    symbol: upper,
-                    name,
-                    exchange,
-                    type,
-                    isInWatchlist: false,
-                };
-                return item;
-            })
-            .filter((item) => !seenSymbols.has(item.symbol));
+        // 1. Local dictionary (Taiwan stocks, A-share/HK blue chips, Pinyin initials) + Tencent Smartbox live search
+        const [localMatches, smartboxMatches] = await Promise.all([
+            Promise.resolve(findChineseStocks(trimmed)),
+            fetchTencentSmartbox(trimmed),
+        ]);
 
-        return [...localCandidates, ...mapped].slice(0, 15);
+        const mergedMap = new Map<string, StockWithWatchlistStatus>();
+        for (const c of localMatches) {
+            mergedMap.set(c.symbol.toUpperCase(), {
+                symbol: c.symbol,
+                name: c.name,
+                exchange: c.exchange,
+                type: c.type,
+                isInWatchlist: false,
+            });
+        }
+        for (const s of smartboxMatches) {
+            const key = s.symbol.toUpperCase();
+            if (!mergedMap.has(key)) {
+                mergedMap.set(key, s);
+            }
+        }
+
+        // 2. If signed in and Finnhub key exists, also supplement with Finnhub global search
+        if (FINNHUB_KEYS.length > 0 && (await getSession())?.user) {
+            try {
+                const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}`;
+                const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
+                const results = Array.isArray(data?.result) ? data.result : [];
+                for (const r of results) {
+                    const upper = (r.symbol || '').toUpperCase();
+                    if (!upper || mergedMap.has(upper)) continue;
+                    mergedMap.set(upper, {
+                        symbol: upper,
+                        name: r.description || upper,
+                        exchange: getExchangeLabel(upper, r.__exchange),
+                        type: r.type || 'Stock',
+                        isInWatchlist: false,
+                    });
+                }
+            } catch {
+                // Ignore Finnhub search failure when smartbox already succeeded
+            }
+        }
+
+        return Array.from(mergedMap.values()).slice(0, 15);
     } catch (err) {
         console.error('Error in stock search:', err);
         return [];

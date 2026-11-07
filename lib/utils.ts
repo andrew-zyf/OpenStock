@@ -120,20 +120,17 @@ export const formatPrice = (price: number, currency = 'USD') => {
 export const formatCurrency = formatPrice;
 
 export function formatNumber(num?: number | null): string {
-    // Guard against missing/invalid market caps (Finnhub omits this field for many
-    // symbols, e.g. ETFs). Without this, `num * 1e6` yields NaN and renders "NaN".
-    if (num === undefined || num === null || !Number.isFinite(num)) return 'N/A';
+    // Guard against missing/invalid market caps
+    if (num === undefined || num === null || !Number.isFinite(num) || num <= 0) return '—';
 
-    // If number is small (likely already in millions from Finnhub), multiply by 1M to get actual value
-    // Typical mega-cap is > 100B. 100B in millions is 100,000.
-    // If we assume typical market cap input IS millions:
-    const value = num * 1000000;
+    // Finnhub's marketCapitalization is in Millions (e.g. $4T is 4,000,000 < 1e8),
+    // while Tencent GTK / TWSE marketCap is in full currency units (>= 1e8).
+    const value = num >= 1e8 ? num : num * 1000000;
 
-    if (value >= 1e12) return (value / 1e12).toFixed(2) + 'T';
-    if (value >= 1e9) return (value / 1e9).toFixed(2) + 'B';
-    if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M';
-    if (value >= 1e3) return (value / 1e3).toFixed(2) + 'K';
-    return value.toString();
+    if (value >= 1e12) return `${(value / 1e12).toFixed(2)}万亿`;
+    if (value >= 1e8) return `${(value / 1e8).toFixed(2)}亿`;
+    if (value >= 1e4) return `${(value / 1e4).toFixed(2)}万`;
+    return Math.round(value).toLocaleString();
 }
 
 export const formatDateToday = new Date().toLocaleDateString('en-US', {

@@ -75,7 +75,7 @@ export default function SearchCommand({ initialStocks }: { initialStocks: StockW
     return (
         <CommandDialog open={open} onOpenChange={setOpen} className="search-dialog">
             <div className="search-field">
-                <CommandInput value={searchTerm} onValueChange={setSearchTerm} placeholder="输入股票代码或公司名称搜索" className="search-input" />
+                <CommandInput value={searchTerm} onValueChange={setSearchTerm} placeholder="输入代码、中文简称或拼音首字母搜索 (如 600519 / 茅台 / gzmt / 2330.TW)" className="search-input" />
                 {loading && <Loader2 className="search-loader" />}
             </div>
             <CommandList className="search-list">

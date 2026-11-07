@@ -49,7 +49,12 @@ async function RealtimeMarketHeader({ symbol }: { symbol: string }) {
         { label: '换手率', icon: Gauge, value: rt?.turnoverRate ? `${rt.turnoverRate.toFixed(2)}%` : '—', hint: '筹码换手活跃度' },
         { label: '振幅', icon: MoveVertical, value: rt?.amplitude ? `${rt.amplitude.toFixed(2)}%` : '—', hint: '日内最高与最低波动幅度' },
         { label: '总市值', icon: Landmark, value: rt?.marketCap ? formatNumber(rt.marketCap) : '—', hint: `计价货币: ${currency}` },
-        { label: '市盈率(TTM)', icon: Gauge, value: rt?.pe ? rt.pe.toFixed(2) : '—', hint: '动态市盈率 PE-TTM' },
+        {
+            label: '市盈(PE) / 市净(PB)',
+            icon: Gauge,
+            value: `${rt?.pe ? rt.pe.toFixed(1) : '—'} / ${rt?.pb ? rt.pb.toFixed(2) : '—'}`,
+            hint: '动态市盈率 PE-TTM 与市净率 PB',
+        },
     ];
 
     const sourceLabel = rt?.market === 'cn'
