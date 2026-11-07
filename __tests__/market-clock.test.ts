@@ -14,16 +14,16 @@ describe('NYSE session', () => {
     });
 
     it('counts down to the right open', () => {
-        expect(sessionOf(2, at(9)).line).toBe('Pre-market · opens in 30m');
-        expect(sessionOf(2, at(14)).line).toBe('Market open · closes in 2h 00m');
+        expect(sessionOf(2, at(9)).line).toBe('盘前交易 · 距开市还有 30分钟');
+        expect(sessionOf(2, at(14)).line).toBe('开市交易中 · 距收市还有 2小时 00分');
         // Friday night and Saturday wait for Monday 9:30
-        expect(sessionOf(5, at(21)).line).toBe('Market closed · opens in 2d 12h');
-        expect(sessionOf(6, at(12)).line).toBe('Market closed · opens in 1d 21h');
+        expect(sessionOf(5, at(21)).line).toBe('休市中 · 距开市还有 2天 12小时');
+        expect(sessionOf(6, at(12)).line).toBe('休市中 · 距开市还有 1天 21小时');
     });
 
     it('formats spans', () => {
-        expect(formatSpan(45)).toBe('45m');
-        expect(formatSpan(125)).toBe('2h 05m');
+        expect(formatSpan(45)).toBe('45分钟');
+        expect(formatSpan(125)).toBe('2小时 05分');
     });
 });
 
@@ -42,18 +42,17 @@ describe('markets', () => {
     });
 
     it('opens each market in its own time zone', () => {
-        // Wed 2026-09-23 10:00 in Mumbai = 04:30 UTC
-        expect(isMarketOpen(getMarket('in'), new Date('2026-09-23T04:30:00Z'))).toBe(true);
-        expect(isMarketOpen(getMarket('us'), new Date('2026-09-23T04:30:00Z'))).toBe(false);
-        // Saturday: stocks and FX closed, crypto open
-        expect(isMarketOpen(getMarket('de'), new Date('2026-09-26T10:00:00Z'))).toBe(false);
-        expect(isMarketOpen(getMarket('fx'), new Date('2026-09-26T10:00:00Z'))).toBe(false);
-        expect(isMarketOpen(getMarket('crypto'), new Date('2026-09-26T10:00:00Z'))).toBe(true);
-        // FX reopens Sunday 17:00 New York (21:00 UTC in September)
-        expect(isMarketOpen(getMarket('fx'), new Date('2026-09-27T21:30:00Z'))).toBe(true);
-        // Tadawul trades Sunday to Thursday, 10:00-15:00 Riyadh (07:00-12:00 UTC)
-        expect(isMarketOpen(getMarket('sa'), new Date('2026-09-27T08:00:00Z'))).toBe(true);
-        expect(isMarketOpen(getMarket('sa'), new Date('2026-09-25T08:00:00Z'))).toBe(false);
-        expect(isMarketOpen(getMarket('sa'), new Date('2026-09-27T12:30:00Z'))).toBe(false);
+        // Wed 2026-09-23 10:00 in Shanghai/HK/Taipei (UTC+8) = 02:00 UTC
+        expect(isMarketOpen(getMarket('cn'), new Date('2026-09-23T02:00:00Z'))).toBe(true);
+        expect(isMarketOpen(getMarket('hk'), new Date('2026-09-23T02:00:00Z'))).toBe(true);
+        expect(isMarketOpen(getMarket('tw'), new Date('2026-09-23T02:00:00Z'))).toBe(true);
+        expect(isMarketOpen(getMarket('us'), new Date('2026-09-23T02:00:00Z'))).toBe(false);
+        // Wed 2026-09-23 14:00 UTC = 10:00 in New York (EDT)
+        expect(isMarketOpen(getMarket('us'), new Date('2026-09-23T14:00:00Z'))).toBe(true);
+        // Saturday: stocks closed
+        expect(isMarketOpen(getMarket('cn'), new Date('2026-09-26T10:00:00Z'))).toBe(false);
+        expect(isMarketOpen(getMarket('hk'), new Date('2026-09-26T10:00:00Z'))).toBe(false);
+        expect(isMarketOpen(getMarket('tw'), new Date('2026-09-26T10:00:00Z'))).toBe(false);
+        expect(isMarketOpen(getMarket('us'), new Date('2026-09-26T14:00:00Z'))).toBe(false);
     });
 });

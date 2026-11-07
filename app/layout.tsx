@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, IBM_Plex_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import {Toaster} from "@/components/ui/sonner";
 import OntoLaunchCard from "@/components/OntoLaunchCard";
+import { cookies } from "next/headers";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -18,24 +19,27 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "OpenStock",
-  description: "OpenStock is an open-source alternative to expensive market platforms. Track real-time prices, set personalized alerts, and explore detailed company insights — built openly, for everyone, forever free.",
+  description: "OpenStock 是面向所有人的开源金融市场终端。实时跟踪行情报价、配置个性化价格预警、深度解析公司财务与指标 — 自由开放，永久开源。",
 };
 
-export default function RootLayout({
-                                       children,
-                                   }: Readonly<{
-    children: React.ReactNode;
+export default async function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
 }>) {
-    return (
-        <html lang="en" className="dark">
-            <body
-                className={`${jakarta.variable} ${plexMono.variable} font-sans antialiased`}
-            >
-                {children}
-                <Toaster/>
-                <OntoLaunchCard />
-                <Analytics />
-            </body>
-        </html>
-    );
+  const cookieStore = await cookies();
+  const colorScheme = cookieStore.get('openstock-color-scheme')?.value || 'cn';
+
+  return (
+    <html lang="zh-CN" className="dark" data-color-scheme={colorScheme}>
+      <body
+        className={`${jakarta.variable} ${plexMono.variable} font-sans antialiased`}
+      >
+        {children}
+        <Toaster />
+        <OntoLaunchCard />
+        <Analytics />
+      </body>
+    </html>
+  );
 }

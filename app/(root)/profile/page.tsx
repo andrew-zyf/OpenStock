@@ -9,12 +9,12 @@ import { getUserWatchlist } from "@/lib/actions/watchlist.actions";
 import { getUserAlerts } from "@/lib/actions/alert.actions";
 import { alertsEnabled } from "@/lib/market-data";
 
-export const metadata = { title: 'Profile | OpenStock' };
+export const metadata = { title: '个人资料 | OpenStock' };
 
 const METHOD_LABELS: Record<string, string> = {
-    credential: 'Email and password',
-    google: 'Google',
-    github: 'GitHub',
+    credential: '邮箱与密码',
+    google: 'Google 账号',
+    github: 'GitHub 账号',
 };
 
 export default async function ProfilePage() {
@@ -29,12 +29,12 @@ export default async function ProfilePage() {
     ]);
     const linked = new Set(accounts.map((a: { providerId: string }) => a.providerId));
     const activeAlerts = alerts.filter((a: { triggered?: boolean }) => !a.triggered).length;
-    const memberSince = new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const memberSince = new Date(user.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
 
     const stats = [
-        { label: 'Watching', value: watchlist.length, icon: Star },
-        { label: alertsEnabled ? 'Active alerts' : 'Paused alerts', value: activeAlerts, icon: Bell },
-        { label: 'Sign-in methods', value: linked.size, icon: ShieldCheck },
+        { label: '自选股票', value: watchlist.length, icon: Star },
+        { label: alertsEnabled ? '生效预警' : '暂停预警', value: activeAlerts, icon: Bell },
+        { label: '登录方式', value: linked.size, icon: ShieldCheck },
     ];
 
     return (
@@ -46,7 +46,7 @@ export default async function ProfilePage() {
                     </span>
                     <div className="min-w-0 flex-1">
                         <h1 className="truncate text-[22px] font-bold tracking-[-0.03em]">{user.name}</h1>
-                        <p className="truncate text-faint">{user.email} · member since {memberSince}</p>
+                        <p className="truncate text-faint">{user.email} · 注册于 {memberSince}</p>
                     </div>
                 </div>
                 <div className="bento mt-[3px]">
@@ -60,7 +60,7 @@ export default async function ProfilePage() {
             </section>
 
             <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-                <Panel title="Details" sub="Your name and what your welcome email is tailored to">
+                <Panel title="基本资料" sub="您的账户昵称与投资偏好">
                     <ProfileForm
                         initial={{
                             name: user.name,
@@ -73,20 +73,20 @@ export default async function ProfilePage() {
                 </Panel>
 
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="Sign-in methods" sub="Ways you can get into this account">
+                    <Panel title="登录方式" sub="已关联的登录凭证">
                         <ul className="row-list">
                             {[...linked].map((id) => (
                                 <li key={id} className="flex items-center gap-3 px-3.5 py-3">
                                     <span className="bento-ico"><KeyRound /></span>
                                     <span className="flex-1 font-semibold">{METHOD_LABELS[id] ?? id}</span>
-                                    <span className="pill is-up">Connected</span>
+                                    <span className="pill is-up">已绑定</span>
                                 </li>
                             ))}
                         </ul>
                     </Panel>
 
                     {linked.has('credential') && (
-                        <Panel title="Password" sub="Changing it signs out your other devices">
+                        <Panel title="修改密码" sub="修改密码后将自动退出其他设备的登录">
                             <PasswordForm />
                         </Panel>
                     )}

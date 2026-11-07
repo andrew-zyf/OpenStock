@@ -11,7 +11,7 @@ export default function MarketSwitcher({ active, openIds }: { active: MarketId; 
     };
 
     return (
-        <nav aria-label="Markets" className="flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+        <nav aria-label="市场选择" className="flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
             {MARKETS.map((m) => {
                 const selected = m.id === active;
                 const open = openIds.includes(m.id);
@@ -28,7 +28,7 @@ export default function MarketSwitcher({ active, openIds }: { active: MarketId; 
                                 : 'text-muted-foreground shadow-[inset_0_0_0_1px_var(--line)] hover:bg-hover hover:text-foreground',
                         )}
                     >
-                        <span className={cn('size-1.5 rounded-full', open ? 'bg-up' : 'bg-line-strong')} title={open ? 'Open now' : 'Closed now'} />
+                        <span className={cn('size-1.5 rounded-full', open ? 'bg-up' : 'bg-line-strong')} title={open ? '开市交易中' : '已休市'} />
                         {m.name}
                     </Link>
                 );

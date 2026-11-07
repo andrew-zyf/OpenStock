@@ -8,7 +8,7 @@
 
 import { isInternationalSymbol } from "@/lib/utils";
 
-export type MarketId = 'us' | 'in' | 'de' | 'ca' | 'au' | 'sa' | 'crypto' | 'fx';
+export type MarketId = 'us' | 'cn' | 'hk' | 'tw';
 
 type Hours = { open: number; close: number }; // minutes of the local day
 
@@ -33,122 +33,64 @@ const hm = (h: number, m = 0) => h * 60 + m;
 
 export const MARKETS: Market[] = [
     {
-        id: 'us', name: 'United States', short: 'US', timeZone: 'America/New_York', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live',
+        id: 'us', name: '美国', short: '美股', timeZone: 'America/New_York', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Live',
         pulse: [
-            { symbol: 'AMEX:SPY', label: 'S&P 500', finnhub: 'SPY' },
-            { symbol: 'NASDAQ:QQQ', label: 'Nasdaq 100', finnhub: 'QQQ' },
-            { symbol: 'AMEX:DIA', label: 'Dow 30', finnhub: 'DIA' },
-            { symbol: 'AMEX:IWM', label: 'Russell 2000', finnhub: 'IWM' },
+            { symbol: 'AMEX:SPY', label: '标普 500', finnhub: 'SPY' },
+            { symbol: 'NASDAQ:QQQ', label: '纳斯达克 100', finnhub: 'QQQ' },
+            { symbol: 'AMEX:DIA', label: '道琼斯 30', finnhub: 'DIA' },
+            { symbol: 'AMEX:IWM', label: '罗素 2000', finnhub: 'IWM' },
         ],
         groups: [
-            { title: 'Financial', symbols: [['NYSE:JPM', 'JPMorgan Chase'], ['NYSE:BAC', 'Bank of America'], ['NYSE:WFC', 'Wells Fargo'], ['NYSE:GS', 'Goldman Sachs'], ['NYSE:MA', 'Mastercard'], ['NYSE:V', 'Visa']] },
-            { title: 'Technology', symbols: [['NASDAQ:AAPL', 'Apple'], ['NASDAQ:MSFT', 'Microsoft'], ['NASDAQ:NVDA', 'NVIDIA'], ['NASDAQ:GOOGL', 'Alphabet'], ['NASDAQ:META', 'Meta'], ['NASDAQ:AMD', 'AMD']] },
-            { title: 'Consumer', symbols: [['NASDAQ:AMZN', 'Amazon'], ['NASDAQ:TSLA', 'Tesla'], ['NYSE:WMT', 'Walmart'], ['NASDAQ:COST', 'Costco'], ['NYSE:KO', 'Coca-Cola'], ['NASDAQ:NFLX', 'Netflix']] },
+            { title: '金融', symbols: [['NYSE:JPM', 'JPMorgan Chase'], ['NYSE:BAC', 'Bank of America'], ['NYSE:WFC', 'Wells Fargo'], ['NYSE:GS', 'Goldman Sachs'], ['NYSE:MA', 'Mastercard'], ['NYSE:V', 'Visa']] },
+            { title: '科技', symbols: [['NASDAQ:AAPL', 'Apple'], ['NASDAQ:MSFT', 'Microsoft'], ['NASDAQ:NVDA', 'NVIDIA'], ['NASDAQ:GOOGL', 'Alphabet'], ['NASDAQ:META', 'Meta'], ['NASDAQ:AMD', 'AMD']] },
+            { title: '消费', symbols: [['NASDAQ:AMZN', 'Amazon'], ['NASDAQ:TSLA', 'Tesla'], ['NYSE:WMT', 'Walmart'], ['NASDAQ:COST', 'Costco'], ['NYSE:KO', 'Coca-Cola'], ['NASDAQ:NFLX', 'Netflix']] },
         ],
         heatmap: 'stocks', news: 'stock',
     },
     {
-        id: 'in', name: 'India', short: 'IN', timeZone: 'Asia/Kolkata', hours: { open: hm(9, 15), close: hm(15, 30) }, feed: 'End of day',
+        id: 'cn', name: '中国', short: 'A股', timeZone: 'Asia/Shanghai', hours: { open: hm(9, 30), close: hm(15) }, feed: 'Delayed',
         pulse: [
-            { symbol: 'BSE:SENSEX', label: 'Sensex' },
-            { symbol: 'BSE:RELIANCE', label: 'Reliance' },
-            { symbol: 'BSE:TCS', label: 'TCS' },
-            { symbol: 'BSE:HDFCBANK', label: 'HDFC Bank' },
+            { symbol: 'SSE:000001', label: '上证指数' },
+            { symbol: 'SZSE:399001', label: '深证成指' },
+            { symbol: 'SSE:000300', label: '沪深 300' },
+            { symbol: 'SZSE:399006', label: '创业板指' },
         ],
         groups: [
-            { title: 'Banks', symbols: [['BSE:HDFCBANK', 'HDFC Bank'], ['BSE:ICICIBANK', 'ICICI Bank'], ['BSE:SBIN', 'State Bank of India'], ['BSE:KOTAKBANK', 'Kotak Mahindra'], ['BSE:AXISBANK', 'Axis Bank']] },
-            { title: 'Technology', symbols: [['BSE:TCS', 'TCS'], ['BSE:INFY', 'Infosys'], ['BSE:WIPRO', 'Wipro'], ['BSE:HCLTECH', 'HCLTech'], ['BSE:TECHM', 'Tech Mahindra']] },
-            { title: 'Industry', symbols: [['BSE:RELIANCE', 'Reliance'], ['BSE:LT', 'Larsen & Toubro'], ['BSE:ONGC', 'ONGC'], ['BSE:NTPC', 'NTPC'], ['BSE:TATASTEEL', 'Tata Steel']] },
+            { title: '核心蓝筹', symbols: [['SSE:600519', '贵州茅台'], ['SZSE:300750', '宁德时代'], ['SZSE:002594', '比亚迪'], ['SSE:601318', '中国平安'], ['SSE:600036', '招商银行'], ['SSE:600900', '长江电力']] },
+            { title: '科技半导体', symbols: [['SSE:688981', '中芯国际'], ['SZSE:002415', '海康威视'], ['SSE:601138', '工业富联'], ['SZSE:002241', '歌尔股份'], ['SZSE:300124', '汇川技术'], ['SZSE:000063', '中兴通讯']] },
+            { title: '消费与制造', symbols: [['SZSE:000858', '五粮液'], ['SZSE:000333', '美的集团'], ['SZSE:000651', '格力电器'], ['SSE:600276', '恒瑞医药'], ['SZSE:300760', '迈瑞医疗'], ['SSE:601857', '中国石油']] },
         ],
         news: 'stock',
     },
     {
-        id: 'de', name: 'Germany', short: 'DE', timeZone: 'Europe/Berlin', hours: { open: hm(9), close: hm(17, 30) }, feed: 'End of day',
+        id: 'hk', name: '香港', short: '港股', timeZone: 'Asia/Hong_Kong', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Delayed',
         pulse: [
-            { symbol: 'XETR:SAP', label: 'SAP' },
-            { symbol: 'XETR:SIE', label: 'Siemens' },
-            { symbol: 'XETR:ALV', label: 'Allianz' },
-            { symbol: 'XETR:DTE', label: 'Deutsche Telekom' },
+            { symbol: 'HKEX:2800', label: '盈富基金 (恒指)' },
+            { symbol: 'HKEX:3033', label: '南方恒生科技' },
+            { symbol: 'HKEX:0700', label: '腾讯控股' },
+            { symbol: 'HKEX:9988', label: '阿里巴巴' },
         ],
         groups: [
-            { title: 'Industry', symbols: [['XETR:SIE', 'Siemens'], ['XETR:BAS', 'BASF'], ['XETR:BMW', 'BMW'], ['XETR:MBG', 'Mercedes-Benz'], ['XETR:VOW3', 'Volkswagen']] },
-            { title: 'Finance', symbols: [['XETR:ALV', 'Allianz'], ['XETR:MUV2', 'Munich Re'], ['XETR:DBK', 'Deutsche Bank'], ['XETR:CBK', 'Commerzbank']] },
-            { title: 'Technology', symbols: [['XETR:SAP', 'SAP'], ['XETR:IFX', 'Infineon'], ['XETR:DTE', 'Deutsche Telekom'], ['XETR:ADS', 'Adidas']] },
+            { title: '科技互联网', symbols: [['HKEX:0700', '腾讯控股'], ['HKEX:9988', '阿里巴巴'], ['HKEX:3690', '美团'], ['HKEX:1810', '小米集团'], ['HKEX:9888', '百度集团'], ['HKEX:9618', '京东集团']] },
+            { title: '金融与综合', symbols: [['HKEX:0005', '汇丰控股'], ['HKEX:1299', '友邦保险'], ['HKEX:0388', '香港交易所'], ['HKEX:0939', '建设银行'], ['HKEX:1398', '工商银行'], ['HKEX:2318', '中国平安']] },
+            { title: '蓝筹与汽车', symbols: [['HKEX:1211', '比亚迪股份'], ['HKEX:2015', '理想汽车'], ['HKEX:0941', '中国移动'], ['HKEX:0883', '中国海洋石油'], ['HKEX:0027', '银河娱乐'], ['HKEX:0016', '新鸿基地产']] },
         ],
         news: 'stock',
     },
     {
-        id: 'ca', name: 'Canada', short: 'CA', timeZone: 'America/Toronto', hours: { open: hm(9, 30), close: hm(16) }, feed: 'Delayed',
+        id: 'tw', name: '台湾', short: '台股', timeZone: 'Asia/Taipei', hours: { open: hm(9), close: hm(13, 30) }, feed: 'Delayed',
         pulse: [
-            { symbol: 'TSX:RY', label: 'Royal Bank' },
-            { symbol: 'TSX:SHOP', label: 'Shopify' },
-            { symbol: 'TSX:ENB', label: 'Enbridge' },
-            { symbol: 'TSX:TD', label: 'TD Bank' },
+            { symbol: 'TWSE:0050', label: '元大台湾50' },
+            { symbol: 'TWSE:2330', label: '台积电' },
+            { symbol: 'TWSE:2317', label: '鸿海' },
+            { symbol: 'TWSE:2454', label: '联发科' },
         ],
         groups: [
-            { title: 'Banks', symbols: [['TSX:RY', 'Royal Bank'], ['TSX:TD', 'TD Bank'], ['TSX:BNS', 'Scotiabank'], ['TSX:BMO', 'Bank of Montreal']] },
-            { title: 'Energy', symbols: [['TSX:ENB', 'Enbridge'], ['TSX:CNQ', 'Canadian Natural'], ['TSX:SU', 'Suncor']] },
-            { title: 'Growth', symbols: [['TSX:SHOP', 'Shopify'], ['TSX:CNR', 'CN Rail'], ['TSX:CP', 'CPKC']] },
+            { title: '半导体电子', symbols: [['TWSE:2330', '台积电'], ['TWSE:2454', '联发科'], ['TWSE:2303', '联电'], ['TWSE:2379', '瑞昱'], ['TWSE:3034', '联咏'], ['TWSE:3711', '日月光投控']] },
+            { title: '电脑与代工', symbols: [['TWSE:2317', '鸿海'], ['TWSE:2382', '广达'], ['TWSE:2308', '台达电'], ['TWSE:3231', '纬创'], ['TWSE:2357', '华硕'], ['TWSE:6669', '纬颖']] },
+            { title: '金融与航运', symbols: [['TWSE:2881', '富邦金'], ['TWSE:2882', '国泰金'], ['TWSE:2891', '中信金'], ['TWSE:2886', '兆丰金'], ['TWSE:2603', '长荣'], ['TWSE:2609', '阳明']] },
         ],
         news: 'stock',
-    },
-    {
-        id: 'au', name: 'Australia', short: 'AU', timeZone: 'Australia/Sydney', hours: { open: hm(10), close: hm(16) }, feed: 'Delayed',
-        pulse: [
-            { symbol: 'ASX:CBA', label: 'CommBank' },
-            { symbol: 'ASX:BHP', label: 'BHP' },
-            { symbol: 'ASX:CSL', label: 'CSL' },
-            { symbol: 'ASX:NAB', label: 'NAB' },
-        ],
-        groups: [
-            { title: 'Banks', symbols: [['ASX:CBA', 'CommBank'], ['ASX:NAB', 'NAB'], ['ASX:WBC', 'Westpac'], ['ASX:ANZ', 'ANZ'], ['ASX:MQG', 'Macquarie']] },
-            { title: 'Resources', symbols: [['ASX:BHP', 'BHP'], ['ASX:FMG', 'Fortescue'], ['ASX:RIO', 'Rio Tinto']] },
-            { title: 'Consumer & health', symbols: [['ASX:CSL', 'CSL'], ['ASX:WES', 'Wesfarmers'], ['ASX:WOW', 'Woolworths']] },
-        ],
-        news: 'stock',
-    },
-    {
-        id: 'sa', name: 'Saudi Arabia', short: 'SA', timeZone: 'Asia/Riyadh', hours: { open: hm(10), close: hm(15) }, tradingDays: [0, 1, 2, 3, 4], feed: 'Delayed', yahoo: true,
-        pulse: [
-            { symbol: 'TADAWUL:TASI', label: 'TASI' },
-            { symbol: 'TADAWUL:2222', label: 'Aramco' },
-            { symbol: 'TADAWUL:1120', label: 'Al Rajhi' },
-            { symbol: 'TADAWUL:7010', label: 'STC' },
-        ],
-        groups: [
-            { title: 'Banks', symbols: [['TADAWUL:1120', 'Al Rajhi Bank'], ['TADAWUL:1180', 'Saudi National Bank'], ['TADAWUL:1150', 'Alinma Bank'], ['TADAWUL:1010', 'Riyad Bank'], ['TADAWUL:1060', 'SAB']] },
-            { title: 'Energy & materials', symbols: [['TADAWUL:2222', 'Saudi Aramco'], ['TADAWUL:2010', 'SABIC'], ['TADAWUL:2082', 'ACWA Power'], ['TADAWUL:1111', 'Tadawul Group']] },
-            { title: 'Telecom & consumer', symbols: [['TADAWUL:7010', 'STC Group'], ['TADAWUL:7020', 'Mobily'], ['TADAWUL:7030', 'Zain KSA'], ['TADAWUL:2280', 'Almarai'], ['TADAWUL:4300', 'Dar Alarkan']] },
-        ],
-        news: 'stock',
-    },
-    {
-        id: 'crypto', name: 'Crypto', short: 'Crypto', timeZone: 'UTC', hours: '24/7', feed: 'Live',
-        pulse: [
-            { symbol: 'BINANCE:BTCUSDT', label: 'Bitcoin', finnhub: 'BINANCE:BTCUSDT' },
-            { symbol: 'BINANCE:ETHUSDT', label: 'Ethereum', finnhub: 'BINANCE:ETHUSDT' },
-            { symbol: 'BINANCE:SOLUSDT', label: 'Solana', finnhub: 'BINANCE:SOLUSDT' },
-            { symbol: 'BINANCE:BNBUSDT', label: 'BNB', finnhub: 'BINANCE:BNBUSDT' },
-        ],
-        groups: [
-            { title: 'Majors', symbols: [['BINANCE:BTCUSDT', 'Bitcoin'], ['BINANCE:ETHUSDT', 'Ethereum'], ['BINANCE:SOLUSDT', 'Solana'], ['BINANCE:BNBUSDT', 'BNB'], ['BINANCE:XRPUSDT', 'XRP']] },
-            { title: 'More', symbols: [['BINANCE:ADAUSDT', 'Cardano'], ['BINANCE:DOGEUSDT', 'Dogecoin'], ['BINANCE:AVAXUSDT', 'Avalanche'], ['BINANCE:LINKUSDT', 'Chainlink'], ['BINANCE:DOTUSDT', 'Polkadot']] },
-        ],
-        heatmap: 'crypto', news: 'crypto',
-    },
-    {
-        id: 'fx', name: 'Forex', short: 'FX', timeZone: 'America/New_York', hours: '24/5', feed: 'Live',
-        pulse: [
-            { symbol: 'FX:EURUSD', label: 'EUR / USD' },
-            { symbol: 'FX:GBPUSD', label: 'GBP / USD' },
-            { symbol: 'FX:USDJPY', label: 'USD / JPY' },
-            { symbol: 'FX:AUDUSD', label: 'AUD / USD' },
-        ],
-        groups: [
-            { title: 'Majors', symbols: [['FX:EURUSD', 'EUR / USD'], ['FX:GBPUSD', 'GBP / USD'], ['FX:USDJPY', 'USD / JPY'], ['FX:USDCHF', 'USD / CHF']] },
-            { title: 'Commodity FX', symbols: [['FX:AUDUSD', 'AUD / USD'], ['FX:USDCAD', 'USD / CAD'], ['FX:NZDUSD', 'NZD / USD']] },
-        ],
-        news: 'forex',
     },
 ];
 
@@ -157,7 +99,7 @@ export const MARKET_COOKIE = 'openstock-market';
 
 export const getMarket = (id?: string | null) => MARKETS.find((m) => m.id === id) ?? MARKETS[0];
 
-const COUNTRY_MARKET: Record<string, MarketId> = { IN: 'in', DE: 'de', CA: 'ca', AU: 'au', SA: 'sa' };
+const COUNTRY_MARKET: Record<string, MarketId> = { CN: 'cn', HK: 'hk', TW: 'tw', US: 'us' };
 export const marketForCountry = (country?: string | null): MarketId => COUNTRY_MARKET[country ?? ''] ?? DEFAULT_MARKET;
 
 // Finnhub free can price (and so alert on) US listings and Binance pairs only.

@@ -15,13 +15,13 @@ const MAX_WATCHLIST = 50;
 export async function addToWatchlist(symbol: string, company: string) {
     const userId = await requireUserId();
     const ticker = String(symbol ?? '').trim().toUpperCase();
-    if (!SYMBOL_PATTERN.test(ticker)) throw new Error('Invalid symbol');
+    if (!SYMBOL_PATTERN.test(ticker)) throw new Error('无效的股票代码');
     const name = String(company ?? '').trim().slice(0, 120);
     try {
         await connectToDatabase();
 
         if (!(await Watchlist.exists({ userId, symbol: ticker })) && (await Watchlist.countDocuments({ userId })) >= MAX_WATCHLIST) {
-            return { error: `Your watchlist is full (${MAX_WATCHLIST} stocks). Remove one to add another.` };
+            return { error: `自选列表已满（上限 ${MAX_WATCHLIST} 只股票），请移除部分后再添加。` };
         }
 
         // Upsert to avoid duplicates/errors if it already exists
@@ -40,7 +40,7 @@ export async function addToWatchlist(symbol: string, company: string) {
         return JSON.parse(JSON.stringify(newItem));
     } catch (error) {
         console.error('Error adding to watchlist:', error);
-        throw new Error('Failed to add to watchlist');
+        throw new Error('添加自选失败');
     }
 }
 
@@ -53,7 +53,7 @@ export async function removeFromWatchlist(symbol: string) {
         return { success: true };
     } catch (error) {
         console.error('Error removing from watchlist:', error);
-        throw new Error('Failed to remove from watchlist');
+        throw new Error('移出自选失败');
     }
 }
 

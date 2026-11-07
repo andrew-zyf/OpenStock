@@ -10,14 +10,14 @@ const DataFreshness = ({ tradeTime }: { tradeTime?: number }) => {
 
     useEffect(() => {
         setAsOf(tradeTime
-            ? new Date(tradeTime * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+            ? new Date(tradeTime * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
             : null);
     }, [tradeTime]);
 
     if (isRealtime) {
-        return <span className="inline-flex items-center gap-1.5 text-[12px] text-faint"><span className="live-dot" /> Live · 15s</span>;
+        return <span className="inline-flex items-center gap-1.5 text-[12px] text-faint"><span className="live-dot" /> 实时行情 · 15秒更新</span>;
     }
-    return <span className="text-[12px] text-faint">{asOf ? `As of ${asOf}` : 'Delayed'} · refreshed hourly</span>;
+    return <span className="text-[12px] text-faint">{asOf ? `截至 ${asOf}` : '延时行情'} · 每小时刷新</span>;
 };
 
 export default DataFreshness;

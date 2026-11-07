@@ -12,34 +12,34 @@ export const GOOD_FIRST_ISSUES_URL = `${REPO_URL}/issues?q=is%3Aopen+label%3A%22
 
 // Sign-up form select options
 export const INVESTMENT_GOALS = [
-    { value: 'Growth', label: 'Growth' },
-    { value: 'Income', label: 'Income' },
-    { value: 'Balanced', label: 'Balanced' },
-    { value: 'Conservative', label: 'Conservative' },
+    { value: 'Growth', label: '成长型 (Growth)' },
+    { value: 'Income', label: '稳健分红 (Income)' },
+    { value: 'Balanced', label: '平衡型 (Balanced)' },
+    { value: 'Conservative', label: '保守型 (Conservative)' },
 ];
 
 export const RISK_TOLERANCE_OPTIONS = [
-    { value: 'Low', label: 'Low' },
-    { value: 'Medium', label: 'Medium' },
-    { value: 'High', label: 'High' },
+    { value: 'Low', label: '低风险' },
+    { value: 'Medium', label: '中等风险' },
+    { value: 'High', label: '高风险' },
 ];
 
 export const PREFERRED_INDUSTRIES = [
-    { value: 'Technology', label: 'Technology' },
-    { value: 'Healthcare', label: 'Healthcare' },
-    { value: 'Finance', label: 'Finance' },
-    { value: 'Energy', label: 'Energy' },
-    { value: 'Consumer Goods', label: 'Consumer Goods' },
+    { value: 'Technology', label: '科技' },
+    { value: 'Healthcare', label: '医疗健康' },
+    { value: 'Finance', label: '金融' },
+    { value: 'Energy', label: '能源' },
+    { value: 'Consumer Goods', label: '消费品' },
 ];
 
 export const ALERT_TYPE_OPTIONS = [
-    { value: 'upper', label: 'Upper' },
-    { value: 'lower', label: 'Lower' },
+    { value: 'upper', label: '上限 (高于)' },
+    { value: 'lower', label: '下限 (低于)' },
 ];
 
 export const CONDITION_OPTIONS = [
-    { value: 'greater', label: 'Greater than (>)' },
-    { value: 'less', label: 'Less than (<)' },
+    { value: 'greater', label: '高于 (>)' },
+    { value: 'less', label: '低于 (<)' },
 ];
 
 // TradingView widgets, built per market from lib/markets.ts groups
@@ -48,7 +48,7 @@ type SymbolGroup = { title: string; symbols: [symbol: string, name: string][] };
 export const marketOverviewConfig = (groups: SymbolGroup[]) => ({
     colorTheme: 'dark',
     dateRange: '12M',
-    locale: 'en',
+    locale: 'zh_CN',
     largeChartUrl: '',
     isTransparent: true,
     showFloatingTooltip: true,
@@ -68,7 +68,7 @@ export const marketOverviewConfig = (groups: SymbolGroup[]) => ({
 });
 
 export const marketQuotesConfig = (groups: SymbolGroup[]) => ({
-    locale: 'en',
+    locale: 'zh_CN',
     showSymbolLogo: true,
     colorTheme: 'dark',
     isTransparent: true,
@@ -81,7 +81,7 @@ export const STOCK_HEATMAP_CONFIG = {
     blockColor: 'change',
     grouping: 'sector',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     symbolUrl: '',
     colorTheme: 'dark',
     exchanges: [],
@@ -96,7 +96,7 @@ export const CRYPTO_HEATMAP_CONFIG = {
     dataSource: 'Crypto',
     blockSize: 'market_cap_calc',
     blockColor: 'change',
-    locale: 'en',
+    locale: 'zh_CN',
     symbolUrl: '',
     colorTheme: 'dark',
     hasTopBar: false,
@@ -112,7 +112,7 @@ export const timelineConfig = (market: 'stock' | 'crypto' | 'forex') => ({
     feedMode: 'market',
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     market,
 });
 
@@ -120,7 +120,7 @@ export const symbolInfoConfig = (symbol: string) => ({
     symbol,
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     width: '100%',
 });
 
@@ -128,7 +128,7 @@ export const singleQuoteConfig = (symbol: string) => ({
     symbol,
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
 });
 
 export const CANDLE_CHART_WIDGET_CONFIG = (symbol: string) => ({
@@ -141,7 +141,7 @@ export const CANDLE_CHART_WIDGET_CONFIG = (symbol: string) => ({
     hide_volume: false,
     hotlist: false,
     interval: 'D',
-    locale: 'en',
+    locale: 'zh_CN',
     save_image: false,
     style: 1,
     symbol: symbol.toUpperCase(),
@@ -161,7 +161,7 @@ export const TECHNICAL_ANALYSIS_WIDGET_CONFIG = (symbol: string) => ({
     symbol: symbol.toUpperCase(),
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     width: '100%',
     height: 400,
     interval: '1h',
@@ -173,7 +173,7 @@ export const COMPANY_PROFILE_WIDGET_CONFIG = (symbol: string) => ({
     symbol: symbol.toUpperCase(),
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     width: '100%',
     height: 440,
 });
@@ -182,7 +182,7 @@ export const COMPANY_FINANCIALS_WIDGET_CONFIG = (symbol: string) => ({
     symbol: symbol.toUpperCase(),
     colorTheme: 'dark',
     isTransparent: true,
-    locale: 'en',
+    locale: 'zh_CN',
     width: '100%',
     height: 464,
     displayMode: 'regular',
@@ -191,44 +191,44 @@ export const COMPANY_FINANCIALS_WIDGET_CONFIG = (symbol: string) => ({
 
 // Default list in the search palette (static on purpose, see searchStocks)
 export const POPULAR_STOCKS = [
-    { symbol: 'AAPL', name: 'Apple Inc', exchange: 'NASDAQ' },
-    { symbol: 'MSFT', name: 'Microsoft Corp', exchange: 'NASDAQ' },
-    { symbol: 'NVDA', name: 'NVIDIA Corp', exchange: 'NASDAQ' },
-    { symbol: 'GOOGL', name: 'Alphabet Inc', exchange: 'NASDAQ' },
-    { symbol: 'AMZN', name: 'Amazon.com Inc', exchange: 'NASDAQ' },
-    { symbol: 'META', name: 'Meta Platforms Inc', exchange: 'NASDAQ' },
-    { symbol: 'TSLA', name: 'Tesla Inc', exchange: 'NASDAQ' },
-    { symbol: 'NFLX', name: 'Netflix Inc', exchange: 'NASDAQ' },
-    { symbol: 'AMD', name: 'Advanced Micro Devices Inc', exchange: 'NASDAQ' },
-    { symbol: 'JPM', name: 'JPMorgan Chase & Co', exchange: 'NYSE' },
+    { symbol: '600519.SS', name: '贵州茅台 (Kweichow Moutai)', exchange: '上海证券交易所' },
+    { symbol: '300750.SZ', name: '宁德时代 (CATL)', exchange: '深圳证券交易所' },
+    { symbol: '0700.HK', name: '腾讯控股 (Tencent)', exchange: '香港交易所' },
+    { symbol: '9988.HK', name: '阿里巴巴 (Alibaba)', exchange: '香港交易所' },
+    { symbol: '2330.TW', name: '台积电 (TSMC)', exchange: '台湾证券交易所' },
+    { symbol: 'NVDA', name: '英伟达 (NVIDIA Corp)', exchange: 'NASDAQ' },
+    { symbol: 'AAPL', name: '苹果 (Apple Inc)', exchange: 'NASDAQ' },
+    { symbol: 'TSLA', name: '特斯拉 (Tesla Inc)', exchange: 'NASDAQ' },
+    { symbol: 'MSFT', name: '微软 (Microsoft Corp)', exchange: 'NASDAQ' },
+    { symbol: 'AMZN', name: '亚马逊 (Amazon.com Inc)', exchange: 'NASDAQ' },
 ];
 
 export const NO_MARKET_NEWS =
-    '<p class="mobile-text" style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#4b5563;">No market news available today. Please check back tomorrow.</p>';
+    '<p class="mobile-text" style="margin:0 0 20px 0;font-size:16px;line-height:1.6;color:#4b5563;">今日暂无市场资讯，请稍后再试。</p>';
 
 export const WATCHLIST_TABLE_HEADER = [
-    'Company',
-    'Symbol',
-    'Price',
-    'Change',
-    'Market Cap',
-    'P/E Ratio',
-    'Alert',
-    'Action',
+    '公司',
+    '代码',
+    '最新价',
+    '涨跌幅',
+    '市值',
+    '市盈率',
+    '预警',
+    '操作',
 ];
 
 export const PASSWORD_RULES = [
-    { label: 'At least 8 characters', test: (pw: string) => pw.length >= 8 },
-    { label: 'At least 1 uppercase letter', test: (pw: string) => /[A-Z]/.test(pw) },
-    { label: 'At least 1 lowercase letter', test: (pw: string) => /[a-z]/.test(pw) },
-    { label: 'At least 1 number', test: (pw: string) => /[0-9]/.test(pw) },
+    { label: '至少 8 个字符', test: (pw: string) => pw.length >= 8 },
+    { label: '包含至少 1 个大写字母', test: (pw: string) => /[A-Z]/.test(pw) },
+    { label: '包含至少 1 个小写字母', test: (pw: string) => /[a-z]/.test(pw) },
+    { label: '包含至少 1 个数字', test: (pw: string) => /[0-9]/.test(pw) },
 ] as const;
 
 export const PASSWORD_VALIDATION = {
-    required: 'Password is required',
-    minLength: { value: 8, message: 'Password must be at least 8 characters' },
+    required: '密码不能为空',
+    minLength: { value: 8, message: '密码长度至少为 8 位' },
     pattern: {
         value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/,
-        message: 'Password must include uppercase, lowercase, and a number',
+        message: '密码必须包含大写字母、小写字母和数字',
     },
 };

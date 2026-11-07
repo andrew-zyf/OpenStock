@@ -23,7 +23,7 @@ export function MarketStatus() {
     return (
         <span className="inline-flex h-8 items-center gap-2 rounded-full bg-card px-3.5 text-[13px] font-semibold text-muted-foreground shadow-[inset_0_0_0_1px_var(--line)]">
             <span className={cn('size-1.5 rounded-full', session?.phase === 'open' ? 'bg-up shadow-[0_0_0_3px_oklch(0.70_0.164_150/0.2)]' : session?.phase === 'closed' ? 'bg-faint' : 'bg-warn')} />
-            <span className="num">{session?.line ?? 'NYSE · New York time'}</span>
+            <span className="num">{session?.line ?? 'NYSE · 纽约时间'}</span>
         </span>
     );
 }
@@ -31,9 +31,9 @@ export function MarketStatus() {
 const R = 88;
 const C = 2 * Math.PI * R;
 const ARCS: { phase: Phase; from: number; to: number; label: string }[] = [
-    { phase: 'pre', from: PRE, to: OPEN, label: 'Pre' },
-    { phase: 'open', from: OPEN, to: CLOSE, label: 'Regular' },
-    { phase: 'after', from: CLOSE, to: AFTER_END, label: 'After' },
+    { phase: 'pre', from: PRE, to: OPEN, label: '盘前' },
+    { phase: 'open', from: OPEN, to: CLOSE, label: '常规交易' },
+    { phase: 'after', from: CLOSE, to: AFTER_END, label: '盘后' },
 ];
 
 // A 24h dial of the New York trading day. Sessions that aren't happening now are hatched.
@@ -44,7 +44,7 @@ export function MarketDial() {
     const markerAngle = now ? (now.minutes / DAY) * 360 : null;
 
     return (
-        <figure className="mx-auto w-full max-w-[280px]" aria-label="New York trading sessions">
+        <figure className="mx-auto w-full max-w-[280px]" aria-label="纽约市场交易时段">
             <div className="relative aspect-square">
             <svg viewBox="0 0 220 220" className="size-full -rotate-90">
                 <defs>
@@ -76,7 +76,7 @@ export function MarketDial() {
             <div className="absolute inset-0 grid place-items-center text-center">
                 <span>
                     <span className="mono block text-[34px] font-medium tracking-[-0.04em] text-foreground">{now?.time ?? '--:--'}</span>
-                    <span className="kicker">New York</span>
+                    <span className="kicker">纽约时间</span>
                 </span>
             </div>
             </div>

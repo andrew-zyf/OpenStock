@@ -57,6 +57,15 @@
     --ring: var(--brand);
 }
 
+/* Chinese market color scheme: 红涨绿跌 (Red Up, Green Down) */
+html[data-color-scheme="cn"],
+:root[data-color-scheme="cn"] {
+    --up:        oklch(0.70 0.162 25);   /* Red for Gains */
+    --up-soft:   oklch(0.30 0.055 25);
+    --down:      oklch(0.70 0.164 150);  /* Green for Losses */
+    --down-soft: oklch(0.30 0.055 150);
+}
+
 @theme inline {
     --font-sans: var(--font-jakarta);
     --font-mono: var(--font-plex-mono);

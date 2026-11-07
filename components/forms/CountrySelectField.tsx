@@ -72,7 +72,7 @@ const CountrySelect = ({
               <span>{COUNTRY_OPTIONS.find((c) => c.value === value)?.label}</span>
             </span>
                     ) : (
-                        'Select your country...'
+                        '选择您的国家 / 地区...'
                     )}
                     <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
                 </Button>
@@ -83,11 +83,11 @@ const CountrySelect = ({
             >
                 <Command className='bg-gray-800 border-gray-600'>
                     <CommandInput
-                        placeholder='Search countries...'
+                        placeholder='搜索国家或地区...'
                         className='country-select-input'
                     />
                     <CommandEmpty className='country-select-empty'>
-                        No country found.
+                        未找到匹配的国家或地区。
                     </CommandEmpty>
                     <CommandList className='max-h-60 bg-gray-800 scrollbar-hide-default'>
                         <CommandGroup className='bg-gray-800'>
@@ -137,7 +137,7 @@ export const CountrySelectField = ({
                 name={name}
                 control={control}
                 rules={{
-                    required: required ? `Please select ${label.toLowerCase()}` : false,
+                    required: required ? `请选择${label}` : false,
                 }}
                 render={({ field }) => (
                     <CountrySelect value={field.value} onChange={field.onChange} />
@@ -145,7 +145,7 @@ export const CountrySelectField = ({
             />
             {error && <p className='text-[13px] text-down'>{error.message}</p>}
             <p className='text-[12.5px] text-faint'>
-                Helps us show market data and news relevant to you.
+                帮助我们为您展示最相关的市场行情与财经资讯。
             </p>
         </div>
     );

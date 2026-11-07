@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const MINI_CHART = 'https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js';
 const miniChart = (symbol: string) => ({
-    symbol, locale: 'en', dateRange: '1M', colorTheme: 'dark', isTransparent: true, autosize: true,
+    symbol, locale: 'zh_CN', dateRange: '1M', colorTheme: 'dark', isTransparent: true, autosize: true,
     trendLineColor: '#47d9bb', underLineColor: 'rgba(71, 217, 187, 0.14)', underLineBottomColor: 'rgba(71, 217, 187, 0)',
 });
 
@@ -17,10 +17,10 @@ export default function ProductPreview() {
     return (
         <div className="overflow-hidden rounded-[18px] bg-side p-[3px] shadow-[0_0_0_1px_oklch(1_0_0/0.05),0_30px_80px_oklch(0_0_0/0.55)]">
             <div className="flex items-end gap-1 px-3 pt-2" aria-hidden>
-                {[['Overview', true], ['AAPL', false], ['NVDA', false]].map(([label, active]) => (
+                {[['市场概览', true], ['AAPL', false], ['NVDA', false]].map(([label, active]) => (
                     <span
                         key={label as string}
-                        className={cn('flex h-9 min-w-[104px] items-center rounded-t-xl px-4 font-semibold', active ? 'bg-canvas text-foreground' : 'text-faint', label !== 'Overview' && 'mono text-[13px]')}
+                        className={cn('flex h-9 min-w-[104px] items-center rounded-t-xl px-4 font-semibold', active ? 'bg-canvas text-foreground' : 'text-faint', label !== '市场概览' && 'mono text-[13px]')}
                     >
                         {label}
                     </span>
@@ -31,8 +31,8 @@ export default function ProductPreview() {
                 <section className="hatch">
                     <div className="section-head">
                         <div>
-                            <h3 className="section-title">Index pulse</h3>
-                            <p className="section-sub">Tracking ETFs via Finnhub</p>
+                            <h3 className="section-title">核心指数</h3>
+                            <p className="section-sub">跟踪主要指数 ETF (Finnhub 数据)</p>
                         </div>
                         <DataFreshness />
                     </div>

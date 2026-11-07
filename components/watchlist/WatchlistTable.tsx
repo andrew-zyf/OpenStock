@@ -32,9 +32,9 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
         return (
             <div className="empty-state">
                 <span className="empty-icon"><Star className="size-5" /></span>
-                <h3>Nothing on your watchlist yet</h3>
-                <p className="max-w-sm">Search for a company and star it to track its price here and set alerts.</p>
-                <SearchButton className="btn btn-primary mt-3"><Search /> Search stocks</SearchButton>
+                <h3>自选列表暂无股票</h3>
+                <p className="max-w-sm">搜索公司或股票代码，点击星标即可加入自选并设置价格预警。</p>
+                <SearchButton className="btn btn-primary mt-3"><Search /> 搜索股票</SearchButton>
                 <div className="mt-4 flex flex-wrap justify-center gap-1.5">
                     {SUGGESTIONS.map((s) => (
                         <Link key={s} href={`/stocks/${s}`} className="pill mono h-7 px-3 hover:bg-hover hover:text-foreground">{s}</Link>
@@ -49,12 +49,12 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
             <table className="data-table">
                 <thead>
                     <tr>
-                        <th>Company</th>
-                        <th className="is-num">Price</th>
-                        <th className="is-num">Today</th>
-                        <th className="is-num">Change</th>
-                        <th className="is-num">Market cap</th>
-                        <th className="w-[88px]"><span className="sr-only">Actions</span></th>
+                        <th>公司</th>
+                        <th className="is-num">最新价</th>
+                        <th className="is-num">今日涨跌</th>
+                        <th className="is-num">涨跌额</th>
+                        <th className="is-num">市值</th>
+                        <th className="w-[88px]"><span className="sr-only">操作</span></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -83,12 +83,12 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                                 <div className="flex items-center justify-end gap-1">
                                     {hasFinnhubQuotes(row.symbol) ? (
                                         <CreateAlertModal symbol={row.symbol} currentPrice={row.price} currency={row.currency}>
-                                            <button type="button" className="icon-btn" title={`Set a price alert for ${row.symbol}`} aria-label={`Set a price alert for ${row.symbol}`}>
+                                            <button type="button" className="icon-btn" title={`为 ${row.symbol} 设置价格预警`} aria-label={`为 ${row.symbol} 设置价格预警`}>
                                                 <Bell />
                                             </button>
                                         </CreateAlertModal>
                                     ) : (
-                                        <span className="icon-btn opacity-40" title="Alerts are available for US stocks and crypto"><Bell /></span>
+                                        <span className="icon-btn opacity-40" title="价格预警目前支持美股和加密货币"><Bell /></span>
                                     )}
                                     <WatchlistButton
                                         symbol={row.symbol}

@@ -1,16 +1,54 @@
-// Yahoo Finance helpers for Tadawul (.SR) quotes, which TradingView's free embeds and Finnhub's free plan don't price.
+// Yahoo Finance helpers for international quotes (.HK, .TW, .SR, etc.), which TradingView's free embeds and Finnhub's free plan don't price or block.
 // Pure functions, covered by tests; the network call lives in lib/actions/yahoo.actions.ts.
 
-// "2222.SR" or "TADAWUL:2222" -> "2222.SR". TASI index -> "^TASI.SR". Anything else -> null.
+// Normalizes international tickers into Yahoo Finance symbols (e.g. "400.HK" -> "0400.HK", "2330.TW" -> "2330.TW", "2222.SR" -> "2222.SR").
+// Bare numbers and plain US tickers without exchange context return null.
 export function normalizeYahooSymbol(symbol: string): string | null {
     const upper = (symbol || '').trim().toUpperCase();
-    if (/^\d+\.SR$/.test(upper)) return upper;
+    if (!upper) return null;
+
+    // Tadawul index & stocks
     if (upper === 'TADAWUL:TASI' || upper === '^TASI.SR') return '^TASI.SR';
-    const ticker = upper.startsWith('TADAWUL:') ? upper.slice('TADAWUL:'.length) : '';
-    return /^\d+$/.test(ticker) ? `${ticker}.SR` : null;
+    if (/^\d+\.SR$/.test(upper)) return upper;
+    if (upper.startsWith('TADAWUL:')) {
+        const ticker = upper.slice('TADAWUL:'.length);
+        return /^\d+$/.test(ticker) ? `${ticker}.SR` : null;
+    }
+
+    // Hong Kong (.HK / HKEX:) - Yahoo Finance requires 4-digit zero-padded ticker (e.g. 0400.HK, 0700.HK)
+    if (upper.endsWith('.HK')) {
+        const code = upper.slice(0, -3);
+        if (/^\d+$/.test(code)) return `${code.padStart(4, '0')}.HK`;
+        return upper;
+    }
+    if (upper.startsWith('HKEX:')) {
+        const code = upper.slice(5);
+        if (/^\d+$/.test(code)) return `${code.padStart(4, '0')}.HK`;
+        return `${code}.HK`;
+    }
+
+    // Taiwan (.TW / TWSE:) & Taipei OTC (.TWO / TPEX:)
+    if (upper.endsWith('.TW') || upper.endsWith('.TWO')) return upper;
+    if (upper.startsWith('TWSE:')) return `${upper.slice(5)}.TW`;
+    if (upper.startsWith('TPEX:')) return `${upper.slice(5)}.TWO`;
+
+    // Shanghai (.SS / SSE:) & Shenzhen (.SZ / SZSE:)
+    if (upper.endsWith('.SS') || upper.endsWith('.SZ')) return upper;
+    if (upper.startsWith('SSE:')) return `${upper.slice(4)}.SS`;
+    if (upper.startsWith('SZSE:')) return `${upper.slice(5)}.SZ`;
+
+    // Other international suffix with exchange dot (e.g. .L, .T, .DE, .AX)
+    if (/^[A-Z0-9.\-_]+\.[A-Z]{1,4}$/.test(upper)) return upper;
+
+    return null;
 }
 
-export const isTadawulSymbol = (symbol: string) => normalizeYahooSymbol(symbol) !== null;
+export const isTadawulSymbol = (symbol: string) => {
+    const s = normalizeYahooSymbol(symbol);
+    return s !== null && s.endsWith('.SR');
+};
+
+export const isYahooPricedSymbol = (symbol: string) => normalizeYahooSymbol(symbol) !== null;
 
 // "TADAWUL:2222" -> "2222.SR", the symbol our stock pages use. The TASI index has no stock page.
 export const tadawulAppSymbol = (tvSymbol: string) => {
@@ -24,13 +62,33 @@ export type YahooDailyQuote = {
     changePercent: number;
     currency: string;
     name: string;
+    open?: number;
+    dayHigh?: number;
+    dayLow?: number;
+    prevClose?: number;
+    volume?: number;
+    fiftyTwoWeekHigh?: number;
+    fiftyTwoWeekLow?: number;
 };
 
 type YahooChartJson = {
     chart?: {
         result?: Array<{
-            meta?: { currency?: string; shortName?: string; longName?: string; regularMarketPrice?: number; fulldayChange?: number; regularMarketChangePercent?: number };
-            indicators?: { quote?: Array<{ close?: (number | null)[] }> };
+            meta?: {
+                currency?: string;
+                shortName?: string;
+                longName?: string;
+                regularMarketPrice?: number;
+                fulldayChange?: number;
+                regularMarketChangePercent?: number;
+                regularMarketDayHigh?: number;
+                regularMarketDayLow?: number;
+                chartPreviousClose?: number;
+                regularMarketVolume?: number;
+                fiftyTwoWeekHigh?: number;
+                fiftyTwoWeekLow?: number;
+            };
+            indicators?: { quote?: Array<{ close?: (number | null)[]; open?: (number | null)[] }> };
         }>;
     };
 };
@@ -51,5 +109,12 @@ export function dailyQuoteFromChart(json: unknown): YahooDailyQuote | null {
         changePercent: meta?.regularMarketChangePercent ?? (prev ? (change / prev) * 100 : 0),
         currency: result.meta?.currency || 'SAR',
         name: result.meta?.shortName || result.meta?.longName || '',
+        open: meta?.chartPreviousClose ?? (result?.indicators?.quote?.[0]?.open?.[0] as number | undefined),
+        dayHigh: meta?.regularMarketDayHigh,
+        dayLow: meta?.regularMarketDayLow,
+        prevClose: meta?.chartPreviousClose ?? (prev ?? undefined),
+        volume: meta?.regularMarketVolume,
+        fiftyTwoWeekHigh: meta?.fiftyTwoWeekHigh,
+        fiftyTwoWeekLow: meta?.fiftyTwoWeekLow,
     };
 }

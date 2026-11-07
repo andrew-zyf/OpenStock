@@ -16,13 +16,13 @@ export default function UpdateBanner({ className }: { className?: string }) {
                     className,
                 )}
             >
-                <span className="pill is-brand shrink-0">New</span>
+                <span className="pill is-brand shrink-0">最新</span>
                 <span className="min-w-0 flex-1 truncate">
                     <span className="font-semibold text-foreground">{LATEST_RELEASE.title}:</span>{' '}
                     <span className="text-muted-foreground">{LATEST_RELEASE.summary}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1 font-semibold text-brand-ink">
-                    <span className="max-sm:hidden">See what’s new</span>
+                    <span className="max-sm:hidden">查看更新</span>
                     <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
             </DialogTrigger>
@@ -44,7 +44,7 @@ export default function UpdateBanner({ className }: { className?: string }) {
                 {/* Closes the modal too: the banner stays mounted across navigations */}
                 <DialogClose asChild>
                     <Link href="/changelog" className="btn btn-primary h-10 w-full">
-                        Read the full changelog <ArrowRight />
+                        查看完整更新日志 <ArrowRight />
                     </Link>
                 </DialogClose>
             </DialogContent>

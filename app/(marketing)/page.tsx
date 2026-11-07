@@ -11,47 +11,47 @@ import { sidebarSponsors } from "@/lib/sponsors";
 import { DISCORD_URL, GOOD_FIRST_ISSUES_URL, REPO_URL } from "@/lib/constants";
 
 const FEATURES = [
-    { icon: CandlestickChart, title: 'Charts that move', body: 'TradingView candles, technicals and financials for any listed company, full screen when you need room.' },
-    { icon: Bell, title: 'Alerts by email', body: 'With OpenStock Cloud, set a target above or below the price. We check every five minutes and write when it crosses.' },
-    { icon: MessagesSquare, title: 'Sentiment in one read', body: 'Buzz and bullishness from Reddit, X.com, news and Polymarket, side by side for each stock.' },
-    { icon: Grid3x3, title: 'The whole market', body: 'Sector heatmap, movers and top stories on one screen before the bell.' },
-    { icon: Command, title: 'Find anything with ⌘K', body: 'Search every exchange Finnhub covers and open a stock as a tab, like a browser.' },
-    { icon: MailOpen, title: 'A Monday digest', body: 'A short, AI-written summary of the week’s news for the stocks you watch.' },
+    { icon: CandlestickChart, title: '生动流畅的专业图表', body: '基于 TradingView 专业 K 线、技术指标与财务图表，随时支持全屏沉浸式分析。' },
+    { icon: Bell, title: '邮件价格预警', body: '设置高于或低于目标价格。系统每 5 分钟自动检测一次，触发时第一时间邮件通知。' },
+    { icon: MessagesSquare, title: '一览社交舆情', body: '综合 Reddit、X、新闻与预测市场的讨论热度与多空情绪，全方位呈现。' },
+    { icon: Grid3x3, title: '掌控全局市场', body: '行业热力图、涨跌领跑榜与市场要闻汇聚同屏，盘前尽知市场动向。' },
+    { icon: Command, title: '⌘K 快捷全局搜索', body: '快速检索全球主要交易所资产代码，像浏览器标签页一样多任务管理。' },
+    { icon: MailOpen, title: '每周精选简报', body: 'AI 智能生成您关注股票的周度资讯精要与市场速递。' },
 ];
 
 const TIERS = [
     {
-        name: 'Community', price: 'Free', cadence: 'Hourly', perHour: 1,
-        body: 'This site. Quotes refresh every hour and are shared by everyone from the edge. Charts stay live.',
-        cta: { label: 'Get started', href: '/sign-up' },
+        name: '社区版', price: '免费', cadence: '每小时刷新', perHour: 1,
+        body: '公开站点。行情每小时刷新，边缘缓存共享。专业 K 线图表保持实时。',
+        cta: { label: '免费开始', href: '/sign-up' },
     },
     {
-        name: 'OpenStock Cloud', price: '$5', per: '/month', tag: 'Coming soon', cadence: 'Every 15 seconds', perHour: 240,
-        body: 'The same app with live quotes and email price alerts, hosted on a pool of market data keys. Nothing to set up.',
-        cta: { label: 'Get notified on Discord', href: DISCORD_URL },
+        name: 'OpenStock 云端版', price: '$5', per: '/月', tag: '即将上线', cadence: '每 15 秒刷新', perHour: 240,
+        body: '包含高频实时行情与邮件价格预警，由云端集群统一托管，开箱即用。',
+        cta: { label: '在 Discord 获取上线提醒', href: DISCORD_URL },
     },
     {
-        name: 'Self-host', price: 'Free', cadence: 'Your call', perHour: 240,
-        body: 'Run it on your own server with your own Finnhub keys: realtime quotes and alerts for you and your team.',
-        cta: { label: 'Setup guide', href: '#self-host' },
+        name: '私有化部署', price: '免费开源', cadence: '自主配置', perHour: 240,
+        body: '在您自己的服务器上使用您自己的 Finnhub Key 运行：为您和团队提供实时行情与预警。',
+        cta: { label: '部署指南', href: '#self-host' },
     },
 ];
 
 const SUPPORT = [
     {
-        icon: HeartHandshake, title: 'Sponsor', primary: true,
-        body: 'Monthly tiers from $5, a one-time gift, or a custom partnership. Sponsors are shown on this site, in the app and in the README.',
-        cta: { label: 'See sponsor tiers', href: '/sponsor' },
+        icon: HeartHandshake, title: '赞助支持', primary: true,
+        body: '提供每月 $5 起的赞助档位或单次赞助。赞助商将展示在官网、应用内与 README。',
+        cta: { label: '查看赞助方案', href: '/sponsor' },
     },
     {
-        icon: GitPullRequest, title: 'Contribute',
-        body: 'Pick a good first issue, improve the docs or design a screen. Every merged pull request keeps OpenStock moving.',
-        cta: { label: 'Good first issues', href: GOOD_FIRST_ISSUES_URL },
+        icon: GitPullRequest, title: '参与贡献',
+        body: '挑选适合新手的 Good First Issue、完善文档或设计界面，每一份 PR 都让 OpenStock 更加完善。',
+        cta: { label: '新手 Issue', href: GOOD_FIRST_ISSUES_URL },
     },
     {
-        icon: Star, title: 'Spread the word',
-        body: 'Star the repo and share it with someone paying for a terminal they barely use.',
-        cta: { label: 'Star on GitHub', href: REPO_URL },
+        icon: Star, title: '分享传播',
+        body: '给我们的 GitHub 仓库点亮 Star，并分享给正在为昂贵商业终端付费的朋友。',
+        cta: { label: '在 GitHub 上 Star', href: REPO_URL },
     },
 ];
 
@@ -73,16 +73,16 @@ const SponsorBanner = () => {
     const [sponsor] = sidebarSponsors();
     if (!sponsor) return null;
     return (
-        <aside aria-label="Sponsor" className="fixed top-[130px] z-30 hidden w-[200px] right-[calc((100vw-1200px)/4-100px)] min-[1680px]:block">
+        <aside aria-label="赞助商" className="fixed top-[130px] z-30 hidden w-[200px] right-[calc((100vw-1200px)/4-100px)] min-[1680px]:block">
             <a href={sponsor.url} target="_blank" rel="noreferrer" className="hatch group">
                 <div className="card flex flex-col gap-4 p-5">
-                    <p className="kicker flex items-center gap-1.5 text-brand-ink"><span className="live-dot" /> Sponsor</p>
+                    <p className="kicker flex items-center gap-1.5 text-brand-ink"><span className="live-dot" /> 赞助商</p>
                     {sponsor.logo && <img src={sponsor.logo} alt={sponsor.iconOnly ? '' : sponsor.name} className="h-14 w-auto self-start" />}
                     <div>
                         <p className="text-[17px] font-bold tracking-[-0.02em]">{sponsor.name}</p>
                         {sponsor.blurb && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{sponsor.blurb}</p>}
                     </div>
-                    <span className="btn btn-ghost h-9 text-[13px] group-hover:bg-[var(--hover)] group-hover:text-foreground">Visit {sponsor.name} <ArrowUpRight /></span>
+                    <span className="btn btn-ghost h-9 text-[13px] group-hover:bg-[var(--hover)] group-hover:text-foreground">访问 {sponsor.name} <ArrowUpRight /></span>
                 </div>
             </a>
         </aside>
@@ -91,7 +91,7 @@ const SponsorBanner = () => {
 
 export default async function LandingPage() {
     const [session, repo] = await Promise.all([getSession(), getRepoStats()]);
-    const start = session?.user ? { href: '/dashboard', label: 'Open dashboard' } : { href: '/sign-up', label: 'Get started free' };
+    const start = session?.user ? { href: '/dashboard', label: '进入控制台' } : { href: '/sign-up', label: '免费开始使用' };
 
     return (
         <>
@@ -100,17 +100,16 @@ export default async function LandingPage() {
                 <div>
                     <MarketStatus />
                     <h1 className="mt-6 text-[44px] font-bold leading-[1.02] tracking-[-0.05em] md:text-[68px]">
-                        Markets, minus<br />the paywall.
+                        告别昂贵付费墙，<br />拥抱开放金融。
                     </h1>
                     <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-muted-foreground">
-                        OpenStock is an open-source alternative to expensive market platforms. Track prices, watch the whole market and dig into
-                        company insights, built openly, for everyone.
+                        OpenStock 是昂贵商业金融终端的开源替代方案。跟踪资产价格、纵览全球市场、深入公司洞察，完全开源，人人可用。
                     </p>
                     <div className="mt-8 flex flex-wrap items-center gap-2">
                         <Link href={start.href} className="btn btn-primary h-11 px-5 text-[15px]">{start.label}</Link>
                         <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost h-11 px-5 text-[15px]">
-                            <Github /> Self-host it
-                            {repo && <span className="num text-faint">{formatCount(repo.stars)} stars</span>}
+                            <Github /> 私有化部署
+                            {repo && <span className="num text-faint">{formatCount(repo.stars)} 星标</span>}
                         </a>
                     </div>
                 </div>
@@ -124,7 +123,7 @@ export default async function LandingPage() {
             </section>
 
             <section id="inside" className="mx-auto mt-28 max-w-[1200px] scroll-mt-24 px-5">
-                <SectionHead kicker="What's inside" title="A terminal for people who aren't at a bank." sub="Everything you need to follow the market, in one place, without a subscription." />
+                <SectionHead kicker="功能特色" title="专为大众打造的现代金融终端。" sub="无需昂贵订阅，在一个界面满足您的所有行情与分析需求。" />
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {FEATURES.map(({ icon, title, body }) => (
                         <IconCard key={title} icon={icon} title={title}>{body}</IconCard>
@@ -134,9 +133,9 @@ export default async function LandingPage() {
 
             <section id="data" className="mx-auto mt-28 max-w-[1200px] scroll-mt-24 px-5">
                 <SectionHead
-                    kicker="Data"
-                    title="Pick how fresh your numbers are."
-                    sub="Charts always stream live from TradingView. Quotes, watchlists and alerts come from Finnhub, and this is how often they update."
+                    kicker="数据源"
+                    title="自由选择行情更新频率。"
+                    sub="图表直接从 TradingView 实时加载；行情报价、自选列表与价格预警由 Finnhub 驱动。"
                 />
                 <div className="grid gap-3 lg:grid-cols-3">
                     {TIERS.map((tier) => (
@@ -152,12 +151,12 @@ export default async function LandingPage() {
                                     <CadenceRail perHour={tier.perHour} />
                                     <p className="num flex justify-between text-[12px] text-faint">
                                         <span>{tier.cadence}</span>
-                                        <span>{tier.perHour} {tier.perHour === 1 ? 'update' : 'updates'} an hour</span>
+                                        <span>{tier.perHour} 次 / 小时</span>
                                     </p>
                                 </div>
                                 <Link
                                     href={tier.cta.href}
-                                    className={cn('btn', tier.name === 'Community' ? 'btn-primary' : 'btn-ghost')}
+                                    className={cn('btn', tier.name === '社区版' ? 'btn-primary' : 'btn-ghost')}
                                     {...(tier.cta.href.startsWith('http') ? { target: '_blank', rel: 'noreferrer' } : {})}
                                 >
                                     {tier.cta.label}
@@ -171,17 +170,17 @@ export default async function LandingPage() {
             <section id="self-host" className="mx-auto mt-28 grid max-w-[1200px] scroll-mt-24 items-start gap-10 px-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
                 <div>
                     <SectionHead
-                        kicker="Self-host"
-                        title="Your server, your keys, live quotes."
-                        sub="Add as many free Finnhub keys as you like: each one adds 60 requests a minute. Switch the data mode to realtime and prices refresh every 15 seconds."
+                        kicker="私有部署"
+                        title="自有服务器，自有秘钥，全实时行情。"
+                        sub="支持配置多个免费 Finnhub Key。切换为 realtime 模式后，行情每 15 秒更新一次。"
                     />
-                    <a href={`${REPO_URL}#docker-setup`} target="_blank" rel="noreferrer" className="btn btn-ghost">Full setup in the README</a>
+                    <a href={`${REPO_URL}#docker-setup`} target="_blank" rel="noreferrer" className="btn btn-ghost">查看 README 部署文档</a>
                 </div>
                 <div className="hatch">
                     <pre className="card mono overflow-x-auto p-5 text-[13px] leading-7 text-muted-foreground">
                         <span className="text-faint">$ </span><span className="text-foreground">git clone {REPO_URL}.git</span>{'\n'}
                         <span className="text-faint">$ </span><span className="text-foreground">cd OpenStock</span>{'\n\n'}
-                        <span className="text-faint"># .env (every variable is in the README)</span>{'\n'}
+                        <span className="text-faint"># .env (完整环境变量见 README)</span>{'\n'}
                         <span className="text-brand-ink">FINNHUB_API_KEYS</span>=key_one,key_two,key_three{'\n'}
                         <span className="text-brand-ink">NEXT_PUBLIC_OPENSTOCK_DATA_MODE</span>=realtime{'\n\n'}
                         <span className="text-faint">$ </span><span className="text-foreground">docker compose up -d --build</span>
@@ -191,9 +190,9 @@ export default async function LandingPage() {
 
             <section id="sponsor" className="mx-auto mt-28 max-w-[1200px] scroll-mt-24 px-5">
                 <SectionHead
-                    kicker="Support"
-                    title="OpenStock is open for sponsors."
-                    sub="It stays free because people and companies back it. Pay what you can, or give time instead."
+                    kicker="开源支持"
+                    title="OpenStock 欢迎赞助与支持。"
+                    sub="在个人与企业的赞助支持下，OpenStock 持续保持开放、自由与免费。"
                 />
                 <div className="grid gap-3 lg:grid-cols-3">
                     {SUPPORT.map(({ icon, title, body, cta, primary }) => (
@@ -219,20 +218,20 @@ export default async function LandingPage() {
                         <div>
                             <p className="kicker text-brand-ink">Open Dev Society</p>
                             <blockquote className="mt-4 text-[26px] font-semibold leading-snug tracking-[-0.03em] md:text-[30px]">
-                                Technology should belong to everyone. Knowledge should be open, free, and accessible.
+                                技术应属于每一个人。知识应当公开、自由且人人皆可获得。
                             </blockquote>
                             <div className="mt-8 flex flex-wrap gap-2">
                                 <Link href={start.href} className="btn btn-primary h-11 px-5 text-[15px]">{start.label}</Link>
-                                <Link href="/about" className="btn btn-ghost h-11 px-5 text-[15px]">Read the manifesto</Link>
+                                <Link href="/about" className="btn btn-ghost h-11 px-5 text-[15px]">阅读宣言</Link>
                             </div>
                         </div>
                         {repo && (
                             <dl className="grid grid-cols-2 content-end gap-3">
                                 {[
-                                    ['Stars', formatCount(repo.stars)],
-                                    ['Forks', formatCount(repo.forks)],
-                                    ['License', repo.license ?? 'AGPL-3.0'],
-                                    ['Written in', 'TypeScript'],
+                                    ['星标数', formatCount(repo.stars)],
+                                    ['分支数', formatCount(repo.forks)],
+                                    ['开源协议', repo.license ?? 'AGPL-3.0'],
+                                    ['开发语言', 'TypeScript'],
                                 ].map(([label, value]) => (
                                     <div key={label} className="bento-tile col-span-1 bg-page">
                                         <dt className="kicker">{label}</dt>

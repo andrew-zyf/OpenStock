@@ -4,6 +4,7 @@ import TradingViewWidget from "@/components/TradingViewWidget";
 import StockHeader, { StockHeaderSkeleton } from "@/components/stocks/StockHeader";
 import StockSentimentCard from "@/components/stocks/StockSentimentCard";
 import StockChart from "@/components/stocks/StockChart";
+import YahooStockChart from "@/components/stocks/YahooStockChart";
 import Panel from "@/components/Panel";
 import {
     TECHNICAL_ANALYSIS_WIDGET_CONFIG,
@@ -20,7 +21,7 @@ async function Sentiment({ symbol }: { symbol: string }) {
     const insight = await getStockSentimentInsights(symbol);
     if (!insight) return null;
     return (
-        <Panel title="Sentiment" sub="Reddit, X.com, news and Polymarket">
+        <Panel title="市场情绪" sub="综合 Reddit、X、新闻与预测市场">
             <StockSentimentCard insight={insight} />
         </Panel>
     );
@@ -29,7 +30,7 @@ async function Sentiment({ symbol }: { symbol: string }) {
 async function DividendYield({ symbol }: { symbol: string }) {
     const dividendYield = await getStockMetrics(symbol);
     return (
-        <Panel title="Dividend Yield">
+        <Panel title="股息率 (Dividend Yield)">
             <p className="text-2xl font-semibold text-white">
                 {dividendYield !== null ? `${dividendYield.toFixed(2)}%` : "—"}
             </p>
@@ -54,21 +55,9 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                     {isChartEmbeddable(tvSymbol) ? (
                         <StockChart tvSymbol={tvSymbol} scriptUrl={`${scriptUrl}advanced-chart.js`} />
                     ) : (
-                        // TradingView refuses this exchange's chart in embeds; say so instead of showing its error
-                        <Panel title="Chart" sub="Only on TradingView for this exchange">
-                            <div className="empty-state py-14">
-                                <span className="empty-icon"><CandlestickChart className="size-5" /></span>
-                                <h3>Chart not available here</h3>
-                                <p className="max-w-80 text-[13px]">
-                                    TradingView doesn’t license {tvSymbol.split(':')[0]} charts for other sites. Financials, technicals and the profile below still work.
-                                </p>
-                                <a href={tradingViewSymbolUrl(tvSymbol)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost mt-2">
-                                    Open chart on TradingView
-                                </a>
-                            </div>
-                        </Panel>
+                        <YahooStockChart symbol={symbol} tvSymbol={tvSymbol} />
                     )}
-                    <Panel title="Financials" sub="Income statement, balance sheet and ratios">
+                    <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
                         <TradingViewWidget
                             scriptUrl={`${scriptUrl}financials.js`}
                             config={COMPANY_FINANCIALS_WIDGET_CONFIG(tvSymbol)}
@@ -78,7 +67,7 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                 </div>
 
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="Technicals" sub="Oscillators and moving averages, 1h">
+                    <Panel title="技术分析" sub="震荡指标与移动均线 (1小时周期)">
                         <TradingViewWidget
                             scriptUrl={`${scriptUrl}technical-analysis.js`}
                             config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(tvSymbol)}
@@ -91,7 +80,7 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                     <Suspense fallback={null}>
                         <Sentiment symbol={symbol} />
                     </Suspense>
-                    <Panel title="Profile" sub="What the company does">
+                    <Panel title="公司概况" sub="主营业务与基本资料">
                         <TradingViewWidget
                             scriptUrl={`${scriptUrl}symbol-profile.js`}
                             config={COMPANY_PROFILE_WIDGET_CONFIG(tvSymbol)}

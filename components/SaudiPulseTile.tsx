@@ -23,10 +23,10 @@ export default function SaudiPulseTile({ tvSymbol, label, quote }: { tvSymbol: s
                 {quote ? (
                     <>
                         <ChangePill value={quote.changePercent} />
-                        <span className="num truncate">{quote.change > 0 ? '+' : ''}{formatAmount(quote.change)} vs prev close</span>
+                        <span className="num truncate">{quote.change > 0 ? '+' : ''}{formatAmount(quote.change)} 较昨收</span>
                     </>
                 ) : (
-                    <span>Quote unavailable</span>
+                    <span>暂无行情</span>
                 )}
             </div>
         </>

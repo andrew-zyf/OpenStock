@@ -18,10 +18,10 @@ export default async function SaudiQuotesTable({ market }: { market: Market }) {
             <table className="w-full text-[13px]">
                 <thead>
                     <tr className="text-left text-faint">
-                        <th className="px-3 py-2 font-medium">Company</th>
-                        <th className="px-3 py-2 text-right font-medium">Price</th>
-                        <th className="px-3 py-2 text-right font-medium">Change</th>
-                        <th className="px-3 py-2 text-right font-medium">Change %</th>
+                        <th className="px-3 py-2 font-medium">公司</th>
+                        <th className="px-3 py-2 text-right font-medium">价格</th>
+                        <th className="px-3 py-2 text-right font-medium">涨跌额</th>
+                        <th className="px-3 py-2 text-right font-medium">涨跌幅</th>
                     </tr>
                 </thead>
                 {market.groups.map((group) => (
@@ -50,7 +50,7 @@ export default async function SaudiQuotesTable({ market }: { market: Market }) {
                     </tbody>
                 ))}
             </table>
-            <p className="px-3 py-2 text-[11.5px] text-faint">Prices in SAR via Yahoo Finance, delayed about 15 minutes.</p>
+            <p className="px-3 py-2 text-[11.5px] text-faint">价格以沙特里亚尔 (SAR) 计价，数据源自 Yahoo Finance，延时约 15 分钟。</p>
         </div>
     );
 }
@@ -66,7 +66,7 @@ export async function SaudiMovers({ market, count = 8 }: { market: Market; count
         .slice(0, count);
     const max = Math.max(0.01, ...ranked.map((r) => Math.abs(r.quote.changePercent)));
 
-    if (ranked.length === 0) return <p className="search-list-indicator">Quotes unavailable right now.</p>;
+    if (ranked.length === 0) return <p className="search-list-indicator">暂无行情数据。</p>;
 
     return (
         <ul className="flex flex-col gap-1 p-1">

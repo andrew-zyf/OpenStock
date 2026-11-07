@@ -23,6 +23,19 @@ const TREND_CLASS: Record<string, string> = {
     stable: '',
 };
 
+const ALIGNMENT_LABELS: Record<string, string> = {
+    'Bullish alignment': '一致看多',
+    'Bearish alignment': '一致看空',
+    'Wide divergence': '分歧极大',
+    'Mixed': '多空分化',
+};
+
+const TREND_LABELS: Record<string, string> = {
+    rising: '上升',
+    falling: '下降',
+    stable: '平稳',
+};
+
 function getAlignmentClass(alignment: string): string {
     if (alignment === 'Bullish alignment') return 'text-up';
     if (alignment === 'Bearish alignment' || alignment === 'Wide divergence') return 'text-down';
@@ -36,9 +49,9 @@ export default function StockSentimentCard({ insight }: StockSentimentCardProps)
     }
 
     const summary = [
-        { label: 'Avg. buzz', value: formatScore(insight.averageBuzz, '/100') },
-        { label: 'Bullish avg', value: formatScore(insight.bullishAverage, '%') },
-        { label: 'Coverage', value: `${insight.availableSources}/4 sources` },
+        { label: '平均热度', value: formatScore(insight.averageBuzz, '/100') },
+        { label: '看多均值', value: formatScore(insight.bullishAverage, '%') },
+        { label: '数据覆盖', value: `${insight.availableSources}/4 数据源` },
     ];
 
     return (
@@ -52,7 +65,7 @@ export default function StockSentimentCard({ insight }: StockSentimentCardProps)
                 ))}
             </div>
             <p className="border-t border-line px-3 py-2.5 text-[12.5px] text-faint">
-                Source alignment: <span className={cn('font-semibold', getAlignmentClass(insight.sourceAlignment))}>{insight.sourceAlignment}</span>
+                各方态度倾斜: <span className={cn('font-semibold', getAlignmentClass(insight.sourceAlignment))}>{ALIGNMENT_LABELS[insight.sourceAlignment] ?? insight.sourceAlignment}</span>
             </p>
 
             <ul className="row-list border-t border-line">
@@ -66,10 +79,10 @@ export default function StockSentimentCard({ insight }: StockSentimentCardProps)
                         </div>
                         <div className="num text-right text-[12.5px]">
                             <p className="font-semibold text-foreground">{formatScore(source.buzzScore, '')}</p>
-                            <p className="text-faint">buzz</p>
+                            <p className="text-faint">热度</p>
                         </div>
                         <span className={cn('pill w-[74px] justify-center capitalize', TREND_CLASS[source.trend ?? ''])}>
-                            {source.bullishPct !== null ? `${source.bullishPct.toFixed(0)}% bull` : (source.trend ?? 'No trend')}
+                            {source.bullishPct !== null ? `${source.bullishPct.toFixed(0)}% 看多` : (TREND_LABELS[source.trend ?? ''] ?? source.trend ?? '无趋势')}
                         </span>
                     </li>
                 ))}

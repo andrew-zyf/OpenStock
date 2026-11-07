@@ -8,6 +8,7 @@ import { hasFinnhubQuotes } from '@/lib/markets';
 import { getYahooDailyQuotes } from '@/lib/actions/yahoo.actions';
 import { isTadawulSymbol } from '@/lib/yahoo';
 import { getSession } from '@/lib/better-auth/auth';
+import { findChineseStocks } from '@/lib/chinese-stocks';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 // Key pool: each free key has its own 60 req/min, so N keys = N x the quota. Rotated per request.
@@ -340,6 +341,16 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
 
         const trimmed = typeof query === 'string' ? query.trim() : '';
 
+        // Chinese stock matching (Pinyin, 6-digit pure code, Chinese name keywords)
+        const localMatches = trimmed ? findChineseStocks(trimmed) : [];
+        const localCandidates: StockWithWatchlistStatus[] = localMatches.map((c) => ({
+            symbol: c.symbol,
+            name: c.name,
+            exchange: c.exchange,
+            type: c.type,
+            isInWatchlist: false,
+        }));
+
         let results: SearchStockCandidate[] = [];
 
         if (!trimmed) {
@@ -353,12 +364,13 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
             }));
         } else {
             // A public server action: only signed-in users may spend Finnhub quota on searches
-            if (!(await getSession())?.user) return [];
+            if (!(await getSession())?.user) return localCandidates.slice(0, 15);
             const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}`;
             const data = await fetchJSON<FinnhubSearchResponse>(url, 1800);
             results = Array.isArray(data?.result) ? data.result : [];
         }
 
+        const seenSymbols = new Set(localCandidates.map((c) => c.symbol.toUpperCase()));
         const mapped: StockWithWatchlistStatus[] = results
             .map((r) => {
                 const upper = (r.symbol || '').toUpperCase();
@@ -375,9 +387,9 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
                 };
                 return item;
             })
-            .slice(0, 15);
+            .filter((item) => !seenSymbols.has(item.symbol));
 
-        return mapped;
+        return [...localCandidates, ...mapped].slice(0, 15);
     } catch (err) {
         console.error('Error in stock search:', err);
         return [];

@@ -18,8 +18,8 @@ interface CreateAlertModalProps {
 }
 
 const CONDITIONS = [
-    { value: 'ABOVE', label: 'Rises above' },
-    { value: 'BELOW', label: 'Falls below' },
+    { value: 'ABOVE', label: '上涨高于' },
+    { value: 'BELOW', label: '下跌低于' },
 ] as const;
 
 export default function CreateAlertModal({ symbol, currentPrice, currency = 'USD', children, onAlertCreated }: CreateAlertModalProps) {
@@ -43,12 +43,12 @@ export default function CreateAlertModal({ symbol, currentPrice, currency = 'USD
         setLoading(true);
         try {
             await createAlert({ symbol, targetPrice: target, condition });
-            toast.success(`Alert set: ${symbol} ${condition === 'ABOVE' ? 'above' : 'below'} ${formatPrice(target, currency)}`);
+            toast.success(`预警已创建：${symbol} ${condition === 'ABOVE' ? '高于' : '低于'} ${formatPrice(target, currency)}`);
             setOpen(false);
             onAlertCreated?.();
         } catch (error) {
             console.error(error);
-            toast.error("Couldn’t create the alert");
+            toast.error("创建预警失败");
         } finally {
             setLoading(false);
         }
@@ -61,15 +61,15 @@ export default function CreateAlertModal({ symbol, currentPrice, currency = 'USD
                 {alertsEnabled ? (
                     <>
                         <div>
-                            <p className="kicker text-brand-ink">Price alert</p>
+                            <p className="kicker text-brand-ink">价格预警</p>
                             <DialogTitle className="mt-1 text-xl font-bold tracking-tight mono">{symbol}</DialogTitle>
                             <DialogDescription className="mt-1 text-[13px] text-faint">
-                                We email you when the price crosses your target. Checked every 5 minutes, expires after 90 days.
+                                当价格达到目标时将发送邮件提醒。每 5 分钟检测一次，90 天后自动到期。
                             </DialogDescription>
                         </div>
 
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                            <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-page p-1" role="radiogroup" aria-label="Condition">
+                            <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-page p-1" role="radiogroup" aria-label="触发条件">
                                 {CONDITIONS.map(({ value, label }) => (
                                     <button
                                         key={value}
@@ -88,7 +88,7 @@ export default function CreateAlertModal({ symbol, currentPrice, currency = 'USD
                             </div>
 
                             <label className="flex flex-col gap-2">
-                                <span className="form-label">Target price</span>
+                                <span className="form-label">目标价格</span>
                                 <span className="flex h-12 items-center gap-2 rounded-[11px] border border-line bg-page px-3 focus-within:border-brand">
                                     <span className="mono text-faint">{currency}</span>
                                     <input
@@ -105,29 +105,29 @@ export default function CreateAlertModal({ symbol, currentPrice, currency = 'USD
                                 </span>
                                 <span className={cn('num text-[12.5px]', alreadyMet ? 'text-warn' : 'text-faint')}>
                                     {!hasPrice
-                                        ? 'Current price unavailable'
+                                        ? '暂无当前价格'
                                         : alreadyMet
-                                            ? `Already ${condition === 'ABOVE' ? 'above' : 'below'} this — it will fire on the next check`
-                                            : `Now ${formatPrice(currentPrice!, currency)}${distance === null ? '' : ` · ${distance > 0 ? '+' : ''}${distance.toFixed(2)}% away`}`}
+                                            ? `当前已${condition === 'ABOVE' ? '高于' : '低于'}此目标 — 下次轮询时将触发`
+                                            : `当前价 ${formatPrice(currentPrice!, currency)}${distance === null ? '' : ` · 距当前 ${distance > 0 ? '+' : ''}${distance.toFixed(2)}%`}`}
                                 </span>
                             </label>
 
                             <button type="submit" disabled={loading || !(target > 0)} className="btn btn-primary h-11">
-                                {loading ? 'Setting alert' : 'Set alert'}
+                                {loading ? '正在设置预警...' : '设置预警'}
                             </button>
                         </form>
                     </>
                 ) : (
                     // Alerts are an OpenStock Cloud feature; the free hourly site points people to it
                     <div>
-                        <p className="kicker text-brand-ink">OpenStock Cloud</p>
-                        <DialogTitle className="mt-1 text-xl font-bold tracking-tight">Price alerts come with Cloud</DialogTitle>
+                        <p className="kicker text-brand-ink">OpenStock 预警</p>
+                        <DialogTitle className="mt-1 text-xl font-bold tracking-tight">云端价格预警服务</DialogTitle>
                         <DialogDescription className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-                            Cloud adds email price alerts and live quotes for $5 a month. It’s coming soon. Self-hosting includes both today.
+                            OpenStock 提供邮件预警和实时行情服务。本地私有化部署已全面支持。
                         </DialogDescription>
                         <div className="mt-5 flex gap-2">
-                            <Link href="/#data" className="btn btn-primary h-11 flex-1">See OpenStock Cloud</Link>
-                            <Link href="/#self-host" className="btn btn-ghost h-11">Self-host</Link>
+                            <Link href="/#data" className="btn btn-primary h-11 flex-1">查看详情</Link>
+                            <Link href="/#self-host" className="btn btn-ghost h-11">私有部署</Link>
                         </div>
                     </div>
                 )}

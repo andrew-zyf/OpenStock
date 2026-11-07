@@ -21,20 +21,20 @@ export async function createAlert(params: {
     condition: 'ABOVE' | 'BELOW';
 }) {
     const userId = await requireUserId();
-    if (!alertsEnabled) throw new Error('Price alerts are part of OpenStock Cloud');
+    if (!alertsEnabled) throw new Error('价格预警功能需启用 OpenStock 预警服务 (OpenStock Cloud)');
     const symbol = String(params.symbol ?? '').trim().toUpperCase();
     const targetPrice = Number(params.targetPrice);
     const condition = params.condition;
 
-    if (!SYMBOL_PATTERN.test(symbol)) throw new Error('Invalid symbol');
-    if (!CONDITIONS.includes(condition)) throw new Error('Invalid condition');
+    if (!SYMBOL_PATTERN.test(symbol)) throw new Error('无效的股票代码 (Invalid symbol)');
+    if (!CONDITIONS.includes(condition)) throw new Error('无效的预警条件 (Invalid condition)');
     // The alert checker prices symbols through Finnhub, whose free plan covers US stocks and crypto
-    if (!hasFinnhubQuotes(symbol)) throw new Error('Alerts are available for US stocks and crypto');
-    if (!Number.isFinite(targetPrice) || targetPrice <= 0) throw new Error('Target price must be a positive number');
+    if (!hasFinnhubQuotes(symbol)) throw new Error('价格预警目前支持美股与加密货币 (US stocks and crypto)');
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) throw new Error('目标价格必须为正数');
 
     await connectToDatabase();
     if (await Alert.countDocuments({ userId, active: true }) >= MAX_ACTIVE_ALERTS) {
-        throw new Error(`You can have up to ${MAX_ACTIVE_ALERTS} active alerts`);
+        throw new Error(`最多可创建 ${MAX_ACTIVE_ALERTS} 条生效预警 (up to ${MAX_ACTIVE_ALERTS} active alerts)`);
     }
 
     try {
@@ -44,7 +44,7 @@ export async function createAlert(params: {
         return JSON.parse(JSON.stringify(newAlert));
     } catch (error) {
         console.error('Error creating alert:', error);
-        throw new Error('Failed to create alert');
+        throw new Error('创建预警失败');
     }
 }
 
@@ -71,6 +71,6 @@ export async function deleteAlert(alertId: string) {
         return { success: true };
     } catch (error) {
         console.error('Error deleting alert:', error);
-        throw new Error('Failed to delete alert');
+        throw new Error('删除预警失败');
     }
 }

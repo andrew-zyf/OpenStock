@@ -41,29 +41,29 @@ export default async function WatchlistPage() {
         <>
             <header className="page-head">
                 <div>
-                    <h1 className="page-title">Watchlist</h1>
+                    <h1 className="page-title">自选股票</h1>
                     <p className="page-sub num flex flex-wrap items-center gap-x-2">
-                        {symbols.length} {symbols.length === 1 ? 'symbol' : 'symbols'} <span aria-hidden>·</span> <DataFreshness />
+                        已关注 {symbols.length} 只标的 <span aria-hidden>·</span> <DataFreshness />
                     </p>
                 </div>
-                <SearchButton className="btn btn-primary"><Plus /> Add symbol</SearchButton>
+                <SearchButton className="btn btn-primary"><Plus /> 添加自选</SearchButton>
             </header>
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
+                    <Panel title="股票列表" sub="点击行进入查看 K 线图表、技术指标与财务数据">
                         <Suspense fallback={<RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />}>
                             <Symbols symbols={symbols} />
                         </Suspense>
                     </Panel>
-                    <Panel title="News" sub={symbols.length ? 'Latest stories for the symbols you watch' : 'General market news'}>
+                    <Panel title="自选资讯" sub={symbols.length ? '关注标的的最新市场动态' : '市场综合资讯'}>
                         <Suspense fallback={<RowsSkeleton />}>
                             <News symbols={symbols} />
                         </Suspense>
                     </Panel>
                 </div>
 
-                <Panel title="Alerts" sub={alertsEnabled ? `${activeAlerts} active · checked every 5 minutes` : 'An OpenStock Cloud feature'} className="self-start">
+                <Panel title="价格预警" sub={alertsEnabled ? `${activeAlerts} 条生效中 · 每 5 分钟检测` : 'OpenStock 预警服务'} className="self-start">
                     <AlertsPanel alerts={alerts} />
                 </Panel>
             </div>

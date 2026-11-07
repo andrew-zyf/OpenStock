@@ -42,10 +42,10 @@ const SocialAuthButtons = () => {
                 window.location.href = result.url;
                 return;
             }
-            toast.error('Sign in failed', { description: result.error });
+            toast.error('登录失败', { description: result.error });
         } catch {
             // Network failure or a stale action after a deploy
-            toast.error('Sign in failed', { description: 'Check your connection and try again.' });
+            toast.error('登录失败', { description: '请检查网络连接后重试。' });
         }
         setPending(null);
     }
@@ -65,13 +65,13 @@ const SocialAuthButtons = () => {
                         className="h-12 border-gray-600 text-gray-400 text-base rounded-lg cursor-pointer"
                     >
                         {icon}
-                        {pending === id ? 'Redirecting' : label}
+                        {pending === id ? '正在跳转...' : label}
                     </Button>
                 ))}
             </div>
             <div className="flex items-center gap-3 text-sm text-gray-500">
                 <span className="h-px flex-1 bg-gray-600" />
-                or
+                或
                 <span className="h-px flex-1 bg-gray-600" />
             </div>
         </div>

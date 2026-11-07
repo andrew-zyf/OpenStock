@@ -34,11 +34,11 @@ export default function OntoLaunchCard() {
             <p className="m-0 mb-2 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[var(--muted)]">
                 {/* eslint-disable-next-line @next/next/no-img-element -- Onto's mark, served from its own site */}
                 <img src="https://buildonto.dev/icon.png" alt="" width={16} height={16} className="h-4 w-4" />
-                From the OpenStock team
+                来自 OpenStock 团队
             </p>
-            <p className="m-0 text-base font-semibold leading-snug text-[var(--text)]">We just launched Onto on Product Hunt.</p>
+            <p className="m-0 text-base font-semibold leading-snug text-[var(--text)]">我们在 Product Hunt 发布了 Onto。</p>
             <p className="m-0 mt-1 mb-3 text-[13.5px] leading-relaxed text-[var(--muted)]">
-                It makes websites readable to AI agents. If you like what we build, an upvote would mean a lot.
+                它能让 AI 智能体更好地阅读与理解网页。如果您喜欢我们的开源作品，欢迎前往投票支持。
             </p>
             <a
                 href={PH}
@@ -46,7 +46,7 @@ export default function OntoLaunchCard() {
                 rel="noopener"
                 className="flex w-full items-center justify-center rounded-full bg-[var(--brand)] px-4 py-2.5 text-sm font-semibold text-[var(--on-brand)] no-underline hover:bg-[var(--brand-strong)]"
             >
-                ▲ Upvote Onto on Product Hunt
+                ▲ 在 Product Hunt 上支持 Onto
             </a>
         </aside>
     );

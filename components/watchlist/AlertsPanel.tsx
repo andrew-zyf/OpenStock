@@ -20,11 +20,11 @@ type AlertRow = {
 };
 
 const statusOf = (alert: AlertRow) => {
-    if (alert.triggered) return { label: 'Triggered', className: 'pill is-brand' };
-    if (!alertsEnabled) return { label: 'Paused', className: 'pill' };
-    if (alert.expiresAt && new Date(alert.expiresAt) < new Date()) return { label: 'Expired', className: 'pill' };
-    if (alert.active === false) return { label: 'Paused', className: 'pill' };
-    return { label: 'Watching', className: 'pill is-up' };
+    if (alert.triggered) return { label: '已触发', className: 'pill is-brand' };
+    if (!alertsEnabled) return { label: '已暂停', className: 'pill' };
+    if (alert.expiresAt && new Date(alert.expiresAt) < new Date()) return { label: '已过期', className: 'pill' };
+    if (alert.active === false) return { label: '已暂停', className: 'pill' };
+    return { label: '监控中', className: 'pill is-up' };
 };
 
 export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
@@ -35,10 +35,10 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         setPendingId(alert._id);
         try {
             await deleteAlert(alert._id);
-            toast.success(`Alert for ${alert.symbol} removed`);
+            toast.success(`已删除 ${alert.symbol} 的价格预警`);
             router.refresh();
         } catch {
-            toast.error("Couldn’t remove the alert");
+            toast.error("删除预警失败");
         } finally {
             setPendingId(null);
         }
@@ -48,9 +48,9 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         return (
             <div className="empty-state py-10">
                 <span className="empty-icon"><BellRing className="size-5" /></span>
-                <h3>Alerts come with Cloud</h3>
-                <p className="max-w-64 text-[13px]">Email price alerts are part of OpenStock Cloud, $5 a month and coming soon.</p>
-                <Link href="/#data" className="btn btn-ghost mt-2">See OpenStock Cloud</Link>
+                <h3>云端价格预警</h3>
+                <p className="max-w-64 text-[13px]">邮件价格预警功能即将上线。</p>
+                <Link href="/#data" className="btn btn-ghost mt-2">了解详情</Link>
             </div>
         );
     }
@@ -59,8 +59,8 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         return (
             <div className="empty-state py-10">
                 <span className="empty-icon"><BellRing className="size-5" /></span>
-                <h3>No alerts yet</h3>
-                <p className="max-w-60 text-[13px]">Use the bell on any row, or “Set alert” on a stock page. We email you when it fires.</p>
+                <h3>暂无价格预警</h3>
+                <p className="max-w-60 text-[13px]">在自选表格中点击铃铛图标，或在股票详情页点击“设置预警”，触发时将通知您。</p>
             </div>
         );
     }
@@ -69,7 +69,7 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         <>
             {!alertsEnabled && (
                 <p className="px-3 pt-3 pb-1 text-[12.5px] text-faint">
-                    Alerts moved to <Link href="/#data" className="text-brand-ink hover:underline">OpenStock Cloud</Link>, so these are paused.
+                    预警功能已升级至 <Link href="/#data" className="text-brand-ink hover:underline">OpenStock Cloud</Link>，当前处于暂停状态。
                 </p>
             )}
             <ul className="row-list">
@@ -80,8 +80,8 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
                             <div className="min-w-0 flex-1">
                                 <p className="mono font-semibold text-foreground">{alert.symbol}</p>
                                 <p className="num truncate text-[12.5px] text-faint">
-                                    {alert.condition === 'ABOVE' ? 'Above' : 'Below'} {formatPrice(alert.targetPrice)}
-                                    {alert.expiresAt && !alert.triggered && ` · until ${new Date(alert.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                                    {alert.condition === 'ABOVE' ? '高于' : '低于'} {formatPrice(alert.targetPrice)}
+                                    {alert.expiresAt && !alert.triggered && ` · 截止 ${new Date(alert.expiresAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`}
                                 </p>
                             </div>
                             <span className={status.className}>{status.label}</span>
@@ -90,8 +90,8 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
                                 onClick={() => handleDelete(alert)}
                                 disabled={pendingId === alert._id}
                                 className="icon-btn is-danger"
-                                title="Remove alert"
-                                aria-label={`Remove alert for ${alert.symbol}`}
+                                title="删除预警"
+                                aria-label={`删除 ${alert.symbol} 的预警`}
                             >
                                 <Trash2 />
                             </button>
