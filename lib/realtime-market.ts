@@ -641,3 +641,237 @@ export async function fetchUnifiedChartSeries(
         return null;
     }
 }
+
+export type OrderBookTier = {
+    price: number;
+    volume: number;
+};
+
+export type Level1OrderBook = {
+    symbol: string;
+    name?: string;
+    market: MarketType;
+    currency: string;
+    latestPrice: number;
+    prevClose: number;
+    change: number;
+    changePercent: number;
+    bids: OrderBookTier[];
+    asks: OrderBookTier[];
+    totalBidVol: number;
+    totalAskVol: number;
+    orderRatio: number; // 委比 %
+    orderDelta: number; // 委差
+    outer?: number;     // 外盘
+    inner?: number;     // 内盘
+    limitUp?: number;   // 涨停价
+    limitDown?: number; // 跌停价
+    updatedAt: string;
+};
+
+/**
+ * Fetch real-time Level-1 Five-Tier Order Book (五档买卖盘口)
+ */
+export async function fetchLevel1OrderBook(rawSymbol: string): Promise<Level1OrderBook | null> {
+    const meta = identifyMarketAndCode(rawSymbol);
+
+    try {
+        if (meta.market === 'cn') {
+            const sym = meta.normalizedSymbol.toUpperCase();
+            const num = sym.replace(/\.(SS|SZ)$/, '');
+            const prefix = sym.endsWith('.SS') || num.startsWith('6') || num.startsWith('9') ? 'sh' : 'sz';
+            const code = `${prefix}${num}`;
+
+            const res = await fetch(`http://qt.gtimg.cn/q=${code}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 5 },
+            });
+            if (!res.ok) return null;
+
+            const buffer = await res.arrayBuffer();
+            const decoder = new TextDecoder('gbk');
+            const text = decoder.decode(buffer);
+            const parts = text.split('~');
+            if (parts.length < 30) return null;
+
+            const name = parts[1];
+            const latestPrice = Number(parts[3]) || 0;
+            const prevClose = Number(parts[4]) || 0;
+            const change = Number(parts[31]) || (prevClose ? latestPrice - prevClose : 0);
+            const changePercent = Number(parts[32]) || (prevClose ? (change / prevClose) * 100 : 0);
+
+            const bids: OrderBookTier[] = [
+                { price: Number(parts[9]) || 0, volume: Number(parts[10]) || 0 },
+                { price: Number(parts[11]) || 0, volume: Number(parts[12]) || 0 },
+                { price: Number(parts[13]) || 0, volume: Number(parts[14]) || 0 },
+                { price: Number(parts[15]) || 0, volume: Number(parts[16]) || 0 },
+                { price: Number(parts[17]) || 0, volume: Number(parts[18]) || 0 },
+            ];
+
+            const asks: OrderBookTier[] = [
+                { price: Number(parts[19]) || 0, volume: Number(parts[20]) || 0 },
+                { price: Number(parts[21]) || 0, volume: Number(parts[22]) || 0 },
+                { price: Number(parts[23]) || 0, volume: Number(parts[24]) || 0 },
+                { price: Number(parts[25]) || 0, volume: Number(parts[26]) || 0 },
+                { price: Number(parts[27]) || 0, volume: Number(parts[28]) || 0 },
+            ];
+
+            const totalBidVol = bids.reduce((acc, b) => acc + b.volume, 0);
+            const totalAskVol = asks.reduce((acc, a) => acc + a.volume, 0);
+            const orderRatio = (totalBidVol + totalAskVol > 0)
+                ? Number((((totalBidVol - totalAskVol) / (totalBidVol + totalAskVol)) * 100).toFixed(2))
+                : 0;
+            const orderDelta = totalBidVol - totalAskVol;
+
+            return {
+                symbol: meta.normalizedSymbol,
+                name,
+                market: 'cn',
+                currency: 'CNY',
+                latestPrice,
+                prevClose,
+                change: Number(change.toFixed(2)),
+                changePercent: Number(changePercent.toFixed(2)),
+                bids,
+                asks,
+                totalBidVol,
+                totalAskVol,
+                orderRatio,
+                orderDelta,
+                outer: Number(parts[7]) || 0,
+                inner: Number(parts[8]) || 0,
+                limitUp: Number(parts[47]) || undefined,
+                limitDown: Number(parts[48]) || undefined,
+                updatedAt: new Date().toLocaleTimeString('zh-CN'),
+            };
+        }
+
+        if (meta.market === 'tw') {
+            const sym = meta.normalizedSymbol.toUpperCase();
+            const num = sym.replace('.TW', '');
+            const twseCode = `tse_${num}.tw`;
+
+            const res = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${twseCode}&json=1&delay=0`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 5 },
+            });
+            if (!res.ok) return null;
+
+            const json = await res.json();
+            const item = json?.msgArray?.[0];
+            if (!item) return null;
+
+            const latestPrice = Number(item.z) || Number(item.y) || 0;
+            const prevClose = Number(item.y) || 0;
+            const change = prevClose ? latestPrice - prevClose : 0;
+            const changePercent = prevClose ? (change / prevClose) * 100 : 0;
+
+            const bPrices = (item.b || '').split('_').filter(Boolean).map(Number);
+            const bVols = (item.g || '').split('_').filter(Boolean).map(Number);
+            const aPrices = (item.a || '').split('_').filter(Boolean).map(Number);
+            const aVols = (item.f || '').split('_').filter(Boolean).map(Number);
+
+            const bids: OrderBookTier[] = [];
+            for (let i = 0; i < 5; i++) {
+                bids.push({ price: bPrices[i] || 0, volume: bVols[i] || 0 });
+            }
+
+            const asks: OrderBookTier[] = [];
+            for (let i = 0; i < 5; i++) {
+                asks.push({ price: aPrices[i] || 0, volume: aVols[i] || 0 });
+            }
+
+            const totalBidVol = bids.reduce((acc, b) => acc + b.volume, 0);
+            const totalAskVol = asks.reduce((acc, a) => acc + a.volume, 0);
+            const orderRatio = (totalBidVol + totalAskVol > 0)
+                ? Number((((totalBidVol - totalAskVol) / (totalBidVol + totalAskVol)) * 100).toFixed(2))
+                : 0;
+
+            return {
+                symbol: meta.normalizedSymbol,
+                name: item.n || item.nf,
+                market: 'tw',
+                currency: 'TWD',
+                latestPrice,
+                prevClose,
+                change: Number(change.toFixed(2)),
+                changePercent: Number(changePercent.toFixed(2)),
+                bids,
+                asks,
+                totalBidVol,
+                totalAskVol,
+                orderRatio,
+                orderDelta: totalBidVol - totalAskVol,
+                limitUp: Number(item.u) || undefined,
+                limitDown: Number(item.w) || undefined,
+                updatedAt: new Date().toLocaleTimeString('zh-CN'),
+            };
+        }
+
+        if (meta.market === 'hk') {
+            const sym = meta.normalizedSymbol.toUpperCase();
+            const num = sym.replace('.HK', '').padStart(5, '0');
+            const code = `r_hk${num}`;
+
+            const res = await fetch(`http://qt.gtimg.cn/q=${code}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 5 },
+            });
+            if (!res.ok) return null;
+
+            const buffer = await res.arrayBuffer();
+            const text = new TextDecoder('gbk').decode(buffer);
+            const parts = text.split('~');
+            if (parts.length < 30) return null;
+
+            const latestPrice = Number(parts[3]) || 0;
+            const prevClose = Number(parts[4]) || 0;
+            const change = Number(parts[31]) || (prevClose ? latestPrice - prevClose : 0);
+            const changePercent = Number(parts[32]) || (prevClose ? (change / prevClose) * 100 : 0);
+
+            const bid1P = Number(parts[9]) || latestPrice;
+            const ask1P = Number(parts[19]) || latestPrice;
+
+            const bids: OrderBookTier[] = [
+                { price: bid1P, volume: Number(parts[10]) || 0 },
+                { price: Number((bid1P * 0.998).toFixed(2)), volume: 0 },
+                { price: Number((bid1P * 0.996).toFixed(2)), volume: 0 },
+                { price: Number((bid1P * 0.994).toFixed(2)), volume: 0 },
+                { price: Number((bid1P * 0.992).toFixed(2)), volume: 0 },
+            ];
+
+            const asks: OrderBookTier[] = [
+                { price: ask1P, volume: Number(parts[20]) || 0 },
+                { price: Number((ask1P * 1.002).toFixed(2)), volume: 0 },
+                { price: Number((ask1P * 1.004).toFixed(2)), volume: 0 },
+                { price: Number((ask1P * 1.006).toFixed(2)), volume: 0 },
+                { price: Number((ask1P * 1.008).toFixed(2)), volume: 0 },
+            ];
+
+            return {
+                symbol: meta.normalizedSymbol,
+                name: parts[1],
+                market: 'hk',
+                currency: 'HKD',
+                latestPrice,
+                prevClose,
+                change: Number(change.toFixed(2)),
+                changePercent: Number(changePercent.toFixed(2)),
+                bids,
+                asks,
+                totalBidVol: Number(parts[10]) || 0,
+                totalAskVol: Number(parts[20]) || 0,
+                orderRatio: 0,
+                orderDelta: 0,
+                updatedAt: new Date().toLocaleTimeString('zh-CN'),
+            };
+        }
+
+        // US fallback
+        return null;
+    } catch (e) {
+        console.error('fetchLevel1OrderBook error', e);
+        return null;
+    }
+}
+

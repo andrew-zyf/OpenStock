@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { CandlestickChart } from "lucide-react";
-import TradingViewWidget from "@/components/TradingViewWidget";
 import StockHeader, { StockHeaderSkeleton } from "@/components/stocks/StockHeader";
 import StockSentimentCard from "@/components/stocks/StockSentimentCard";
-import StockChart from "@/components/stocks/StockChart";
 import YahooStockChart from "@/components/stocks/YahooStockChart";
+import OrderBookCard from "@/components/stocks/OrderBookCard";
+import NativeFinancials from "@/components/stocks/NativeFinancials";
+import NativeCompanyProfile from "@/components/stocks/NativeCompanyProfile";
+import TradingViewWidget from "@/components/TradingViewWidget";
 import Panel from "@/components/Panel";
 import {
     TECHNICAL_ANALYSIS_WIDGET_CONFIG,
@@ -13,7 +14,8 @@ import {
 } from "@/lib/constants";
 import { getStockSentimentInsights } from '@/lib/actions/adanos.actions';
 import { getStockMetrics } from '@/lib/actions/finnhub.actions';
-import { formatSymbolForTradingView, isChartEmbeddable, tradingViewSymbolUrl } from '@/lib/utils';
+import { formatSymbolForTradingView, isChartEmbeddable } from '@/lib/utils';
+import { identifyMarketAndCode } from "@/lib/realtime-market";
 
 const scriptUrl = `https://s3.tradingview.com/external-embedding/embed-widget-`;
 
@@ -38,11 +40,12 @@ async function DividendYield({ symbol }: { symbol: string }) {
     );
 }
 
-// Charts come straight from TradingView (live, no quota); only the header waits on Finnhub, and it streams.
 export default async function StockDetails({ params }: StockDetailsPageProps) {
     const { symbol: rawSymbol } = await params;
     const symbol = decodeURIComponent(rawSymbol).toUpperCase();
     const tvSymbol = formatSymbolForTradingView(symbol);
+    const meta = identifyMarketAndCode(symbol);
+    const isChineseMarket = meta.market === 'cn' || meta.market === 'hk' || meta.market === 'tw';
 
     return (
         <>
@@ -51,38 +54,61 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
             </Suspense>
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+                {/* 左侧主视窗：走势主图与财务指标 */}
                 <div className="flex min-w-0 flex-col gap-3">
                     <YahooStockChart symbol={symbol} tvSymbol={tvSymbol} />
-                    <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
-                        <TradingViewWidget
-                            scriptUrl={`${scriptUrl}financials.js`}
-                            config={COMPANY_FINANCIALS_WIDGET_CONFIG(tvSymbol)}
-                            height={500}
-                        />
-                    </Panel>
+
+                    {isChineseMarket ? (
+                        <Suspense fallback={null}>
+                            <NativeFinancials symbol={symbol} />
+                        </Suspense>
+                    ) : (
+                        <Panel title="财务数据" sub="利润表、资产负债表与核心财务比率">
+                            <TradingViewWidget
+                                scriptUrl={`${scriptUrl}financials.js`}
+                                config={COMPANY_FINANCIALS_WIDGET_CONFIG(tvSymbol)}
+                                height={500}
+                            />
+                        </Panel>
+                    )}
                 </div>
 
+                {/* 右侧边栏：五档买卖盘口 / 技术分析、股息、情绪与公司档案 */}
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="技术分析" sub="震荡指标与移动均线 (1小时周期)">
-                        <TradingViewWidget
-                            scriptUrl={`${scriptUrl}technical-analysis.js`}
-                            config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(tvSymbol)}
-                            height={400}
-                        />
-                    </Panel>
+                    {isChineseMarket ? (
+                        <OrderBookCard symbol={symbol} />
+                    ) : (
+                        <Panel title="技术分析" sub="震荡指标与移动均线 (1小时周期)">
+                            <TradingViewWidget
+                                scriptUrl={`${scriptUrl}technical-analysis.js`}
+                                config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(tvSymbol)}
+                                height={400}
+                            />
+                        </Panel>
+                    )}
+
                     <Suspense fallback={null}>
                         <DividendYield symbol={symbol} />
                     </Suspense>
+
                     <Suspense fallback={null}>
                         <Sentiment symbol={symbol} />
                     </Suspense>
-                    <Panel title="公司概况" sub="主营业务与基本资料">
-                        <TradingViewWidget
-                            scriptUrl={`${scriptUrl}symbol-profile.js`}
-                            config={COMPANY_PROFILE_WIDGET_CONFIG(tvSymbol)}
-                            height={440}
-                        />
-                    </Panel>
+
+                    {/* 公司概况：A股、港股、台股彻底使用原生真实档案替换 TradingView */}
+                    {isChineseMarket ? (
+                        <Suspense fallback={null}>
+                            <NativeCompanyProfile symbol={symbol} />
+                        </Suspense>
+                    ) : (
+                        <Panel title="公司概况" sub="主营业务与基本资料">
+                            <TradingViewWidget
+                                scriptUrl={`${scriptUrl}symbol-profile.js`}
+                                config={COMPANY_PROFILE_WIDGET_CONFIG(tvSymbol)}
+                                height={440}
+                            />
+                        </Panel>
+                    )}
                 </div>
             </div>
         </>

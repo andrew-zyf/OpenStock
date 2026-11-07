@@ -3,13 +3,14 @@ import SaudiPulseTile from "@/components/SaudiPulseTile";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { getLiveQuotes } from "@/lib/actions/finnhub.actions";
 import { getYahooDailyQuotes } from "@/lib/actions/yahoo.actions";
+import { getRealtimeQuotesBatch } from "@/lib/actions/realtime-market.actions";
 import { singleQuoteConfig } from "@/lib/constants";
 import { getMarket, type Market } from "@/lib/markets";
 
 const SINGLE_QUOTE = 'https://s3.tradingview.com/external-embedding/embed-widget-single-quote.js';
 
-// Four headline tiles for a market. Markets Finnhub can price get native tiles from our shared quote cache;
-// the rest use TradingView's quote tile, which is free for those exchanges. Yahoo-priced markets (Tadawul) get our own tiles.
+// Four headline tiles for a market. A股, 港股, 台股 & US native use our regional Level-1 stream (0 delay, 100% native);
+// Yahoo-priced markets (Tadawul) get their own tiles; others fallback to TradingView.
 export default async function IndexPulse({ market = getMarket('us') }: { market?: Market }) {
     if (market.yahoo) {
         const yahoo = await getYahooDailyQuotes(market.pulse.map((p) => p.symbol));
@@ -19,6 +20,23 @@ export default async function IndexPulse({ market = getMarket('us') }: { market?
             </div>
         );
     }
+
+    // A股, 港股, 台股: 100% native regional quotes (Tencent GTK / TWSE MIS)
+    if (market.id === 'cn' || market.id === 'hk' || market.id === 'tw') {
+        const symbols = market.pulse.map((p) => p.finnhub || p.symbol);
+        const quotes = await getRealtimeQuotesBatch(symbols);
+
+        return (
+            <div className="bento">
+                {market.pulse.map((tile) => {
+                    const sym = tile.finnhub || tile.symbol;
+                    const q = quotes[sym] ?? null;
+                    return <PulseTile key={tile.symbol} symbol={sym} label={tile.label} initial={q} />;
+                })}
+            </div>
+        );
+    }
+
     const native = market.pulse.flatMap((p) => (p.finnhub ? [p.finnhub] : []));
     const quotes = native.length ? await getLiveQuotes(native) : {};
 

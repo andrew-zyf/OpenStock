@@ -3,9 +3,11 @@
 import {
     fetchRealtimeQuotes,
     fetchUnifiedChartSeries,
+    fetchLevel1OrderBook,
     type UnifiedQuote,
     type ChartSeries,
     type ChartPeriod,
+    type Level1OrderBook,
 } from "@/lib/realtime-market";
 
 export async function getRealtimeQuote(symbol: string): Promise<UnifiedQuote | null> {
@@ -22,4 +24,8 @@ export async function getUnifiedChartSeries(
     period: ChartPeriod = '1d',
 ): Promise<ChartSeries | null> {
     return await fetchUnifiedChartSeries(symbol, period);
+}
+
+export async function getLevel1OrderBook(symbol: string): Promise<Level1OrderBook | null> {
+    return await fetchLevel1OrderBook(symbol);
 }

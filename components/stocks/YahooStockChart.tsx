@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowUpRight, BarChart2, CandlestickChart, Clock, LineChart } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { CandlestickChart, Clock, LineChart, ZoomIn, ZoomOut, RotateCcw, MoveHorizontal } from "lucide-react";
 import Panel from "@/components/Panel";
 import ChangePill from "@/components/ChangePill";
 import { getUnifiedChartSeries } from "@/lib/actions/realtime-market.actions";
@@ -42,15 +42,22 @@ function calcMA(points: ChartDataPoint[], window: number): (number | null)[] {
     });
 }
 
-export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; tvSymbol: string }) {
+export default function YahooStockChart({ symbol, tvSymbol: _tvSymbol }: { symbol: string; tvSymbol?: string }) {
     const [period, setPeriod] = useState<Period>('1d');
     const [chartStyle, setChartStyle] = useState<ChartStyle>('line');
     const [chartData, setChartData] = useState<ChartSeries | null>(null);
     const [loading, setLoading] = useState(true);
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+    const [viewRange, setViewRange] = useState<[number, number] | null>(null);
     const [, startTransition] = useTransition();
 
-    // Default to line for 1d, candlestick for multi-day K-lines
+    // Drag-to-pan refs
+    const isDragging = useRef(false);
+    const dragStartX = useRef(0);
+    const initialRange = useRef<[number, number]>([0, 0]);
+    const hasMoved = useRef(false);
+
+    // Switch period & auto-pick default style
     const handlePeriodChange = (next: Period) => {
         setPeriod(next);
         if (next === '1d') {
@@ -58,6 +65,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
         } else {
             setChartStyle('candlestick');
         }
+        setViewRange(null);
         startTransition(() => {});
     };
 
@@ -68,6 +76,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
             if (active) {
                 setChartData(data);
                 setHoverIndex(null);
+                setViewRange(null); // reset zoom to full series
                 setLoading(false);
             }
         });
@@ -76,18 +85,29 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
         };
     }, [symbol, period]);
 
-    const points = chartData?.points ?? [];
+    const allPoints = chartData?.points ?? [];
     const currency = chartData?.currency || 'USD';
     const market = chartData?.market || 'us';
 
-    // Calculate MA lines
-    const ma5List = useMemo(() => calcMA(points, 5), [points]);
-    const ma10List = useMemo(() => calcMA(points, 10), [points]);
-    const ma20List = useMemo(() => calcMA(points, 20), [points]);
+    // Global MA lists computed over entire series for accuracy
+    const globalMa5 = useMemo(() => calcMA(allPoints, 5), [allPoints]);
+    const globalMa10 = useMemo(() => calcMA(allPoints, 10), [allPoints]);
+    const globalMa20 = useMemo(() => calcMA(allPoints, 20), [allPoints]);
 
-    // Active hovered point or latest point
-    const activeIdx = hoverIndex != null && points[hoverIndex] ? hoverIndex : points.length ? points.length - 1 : null;
-    const activePoint = activeIdx != null ? points[activeIdx] : null;
+    // Active zoom & pan window
+    const totalBars = allPoints.length;
+    const startIdx = viewRange ? Math.max(0, Math.min(viewRange[0], totalBars - 10)) : 0;
+    const endIdx = viewRange ? Math.min(totalBars - 1, Math.max(viewRange[1], startIdx + 9)) : totalBars - 1;
+
+    // Sliced visible points
+    const visiblePoints = useMemo(() => {
+        if (!totalBars) return [];
+        return allPoints.slice(startIdx, endIdx + 1);
+    }, [allPoints, startIdx, endIdx]);
+
+    const visibleMa5 = useMemo(() => globalMa5.slice(startIdx, endIdx + 1), [globalMa5, startIdx, endIdx]);
+    const visibleMa10 = useMemo(() => globalMa10.slice(startIdx, endIdx + 1), [globalMa10, startIdx, endIdx]);
+    const visibleMa20 = useMemo(() => globalMa20.slice(startIdx, endIdx + 1), [globalMa20, startIdx, endIdx]);
 
     // SVG Layout Dimensions
     const svgWidth = 840;
@@ -101,10 +121,10 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     const volH = 80;   // Volume subchart height
     const volBaseY = paddingY + mainH + gap + volH;
 
-    // Price scaling
+    // Price scaling over visible slice
     const isCandle = chartStyle === 'candlestick' && period !== '1d';
-    const highs = points.map((p) => (isCandle && p.high != null ? p.high : p.close));
-    const lows = points.map((p) => (isCandle && p.low != null ? p.low : p.close));
+    const highs = visiblePoints.map((p) => (isCandle && p.high != null ? p.high : p.close));
+    const lows = visiblePoints.map((p) => (isCandle && p.low != null ? p.low : p.close));
     const rawMin = lows.length ? Math.min(...lows) : 0;
     const rawMax = highs.length ? Math.max(...highs) : 100;
     const range = rawMax - rawMin || 1;
@@ -113,13 +133,13 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     const yMax = rawMax + padding;
     const yDiff = yMax - yMin || 1;
 
-    // Volume scaling
-    const volumes = points.map((p) => p.volume || 0);
+    // Volume scaling over visible slice
+    const volumes = visiblePoints.map((p) => p.volume || 0);
     const maxVol = Math.max(...volumes, 1);
 
     // Coordinate mapping
-    const coords = points.map((p, idx) => {
-        const x = paddingX + (idx / Math.max(1, points.length - 1)) * innerW;
+    const coords = visiblePoints.map((p, idx) => {
+        const x = paddingX + (idx / Math.max(1, visiblePoints.length - 1)) * innerW;
         const yClose = paddingY + mainH - ((p.close - yMin) / yDiff) * mainH;
         const yOpen = paddingY + mainH - (((p.open ?? p.close) - yMin) / yDiff) * mainH;
         const yHigh = paddingY + mainH - (((p.high ?? p.close) - yMin) / yDiff) * mainH;
@@ -173,12 +193,20 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
         return path;
     };
 
-    const ma5Path = isCandle ? makeMaPath(ma5List) : '';
-    const ma10Path = isCandle ? makeMaPath(ma10List) : '';
-    const ma20Path = isCandle ? makeMaPath(ma20List) : '';
+    const ma5Path = isCandle ? makeMaPath(visibleMa5) : '';
+    const ma10Path = isCandle ? makeMaPath(visibleMa10) : '';
+    const ma20Path = isCandle ? makeMaPath(visibleMa20) : '';
 
-    // Candle width
-    const barW = Math.max(2, Math.min(10, (innerW / Math.max(1, points.length)) * 0.7));
+    // Dynamic candle width based on visible count
+    const barW = Math.max(2, Math.min(18, (innerW / Math.max(1, visiblePoints.length)) * 0.72));
+
+    // Active hovered point or latest point
+    const activeIdx = hoverIndex != null && visiblePoints[hoverIndex]
+        ? hoverIndex
+        : visiblePoints.length
+            ? visiblePoints.length - 1
+            : null;
+    const activePoint = activeIdx != null ? visiblePoints[activeIdx] : null;
 
     // Conventional Data Metrics for header
     const activePrice = activePoint ? activePoint.close : chartData?.latestPrice;
@@ -187,17 +215,162 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     const activeLow = activePoint?.low;
     const activeVolume = activePoint?.volume;
     const activeTime = activePoint ? (period === '1d' ? activePoint.time : activePoint.date) : '';
-    const activePrev = activeIdx != null && activeIdx > 0 ? points[activeIdx - 1].close : chartData?.prevClose || activeOpen;
+    const activePrev = activeIdx != null && activeIdx > 0
+        ? visiblePoints[activeIdx - 1].close
+        : chartData?.prevClose || activeOpen;
     const activeDiff = activePrice && activePrev ? activePrice - activePrev : 0;
     const activeDiffPct = activePrev ? (activeDiff / activePrev) * 100 : 0;
     const activeAmp = activeHigh && activeLow && activePrev ? ((activeHigh - activeLow) / activePrev) * 100 : 0;
 
-    const activeMa5 = activeIdx != null ? ma5List[activeIdx] : null;
-    const activeMa10 = activeIdx != null ? ma10List[activeIdx] : null;
-    const activeMa20 = activeIdx != null ? ma20List[activeIdx] : null;
+    const activeMa5 = activeIdx != null ? visibleMa5[activeIdx] : null;
+    const activeMa10 = activeIdx != null ? visibleMa10[activeIdx] : null;
+    const activeMa20 = activeIdx != null ? visibleMa20[activeIdx] : null;
+
+    // --- Zoom & Pan Event Handlers ---
+    const handleZoomIn = () => {
+        if (totalBars <= 10) return;
+        const currentLen = endIdx - startIdx + 1;
+        const nextLen = Math.max(10, Math.round(currentLen * 0.75));
+        const center = Math.round((startIdx + endIdx) / 2);
+        let s = Math.round(center - nextLen / 2);
+        let e = s + nextLen - 1;
+        if (s < 0) {
+            e -= s;
+            s = 0;
+        }
+        if (e > totalBars - 1) {
+            s -= (e - (totalBars - 1));
+            e = totalBars - 1;
+        }
+        setViewRange([Math.max(0, s), Math.min(totalBars - 1, e)]);
+    };
+
+    const handleZoomOut = () => {
+        if (totalBars <= 10) return;
+        const currentLen = endIdx - startIdx + 1;
+        const nextLen = Math.min(totalBars, Math.round(currentLen * 1.35));
+        const center = Math.round((startIdx + endIdx) / 2);
+        let s = Math.round(center - nextLen / 2);
+        let e = s + nextLen - 1;
+        if (s < 0) {
+            e -= s;
+            s = 0;
+        }
+        if (e > totalBars - 1) {
+            s -= (e - (totalBars - 1));
+            e = totalBars - 1;
+        }
+        setViewRange([Math.max(0, s), Math.min(totalBars - 1, e)]);
+    };
+
+    const handleResetZoom = () => {
+        setViewRange(null);
+    };
+
+    const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+        if (e.button !== 0 || totalBars <= 10) return;
+        isDragging.current = true;
+        hasMoved.current = false;
+        dragStartX.current = e.clientX;
+        initialRange.current = [startIdx, endIdx];
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+        if (isDragging.current) {
+            const deltaX = e.clientX - dragStartX.current;
+            if (Math.abs(deltaX) > 3) {
+                hasMoved.current = true;
+            }
+            const windowSize = initialRange.current[1] - initialRange.current[0] + 1;
+            const pxPerBar = innerW / Math.max(1, windowSize);
+            const shiftBars = Math.round(deltaX / pxPerBar);
+
+            if (shiftBars !== 0) {
+                let newStart = initialRange.current[0] - shiftBars;
+                let newEnd = initialRange.current[1] - shiftBars;
+                if (newStart < 0) {
+                    newEnd -= newStart;
+                    newStart = 0;
+                }
+                if (newEnd > totalBars - 1) {
+                    newStart -= (newEnd - (totalBars - 1));
+                    newEnd = totalBars - 1;
+                }
+                newStart = Math.max(0, newStart);
+                newEnd = Math.min(totalBars - 1, newEnd);
+                setViewRange([newStart, newEnd]);
+            }
+        }
+    };
+
+    const handleMouseUp = () => {
+        isDragging.current = false;
+    };
+
+    const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+        if (totalBars <= 10) return;
+        e.preventDefault();
+
+        const zoomFactor = e.deltaY < 0 ? 0.85 : 1.18;
+        const currentLen = endIdx - startIdx + 1;
+        let nextLen = Math.round(currentLen * zoomFactor);
+        nextLen = Math.max(10, Math.min(totalBars, nextLen));
+        if (nextLen === currentLen) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const mouseRatio = Math.max(0, Math.min(1, (e.clientX - rect.left - paddingX) / innerW));
+        const centerIdx = startIdx + Math.round(currentLen * mouseRatio);
+
+        let newStart = Math.round(centerIdx - nextLen * mouseRatio);
+        let newEnd = newStart + nextLen - 1;
+        if (newStart < 0) {
+            newEnd -= newStart;
+            newStart = 0;
+        }
+        if (newEnd > totalBars - 1) {
+            newStart -= (newEnd - (totalBars - 1));
+            newEnd = totalBars - 1;
+        }
+        newStart = Math.max(0, newStart);
+        newEnd = Math.min(totalBars - 1, newEnd);
+        setViewRange([newStart, newEnd]);
+    };
+
+    const isZoomed = viewRange != null && (startIdx > 0 || endIdx < totalBars - 1);
 
     const action = (
         <div className="flex flex-wrap items-center gap-1.5">
+            {/* 缩放与拖拽控制工具组 */}
+            <div className="flex items-center rounded-lg bg-page/60 p-0.5 border border-line">
+                <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs text-faint hover:text-foreground transition-colors"
+                    title="放大 K 线 (亦可用鼠标滚轮)"
+                >
+                    <ZoomIn className="size-3.5" />
+                </button>
+                <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs text-faint hover:text-foreground transition-colors"
+                    title="缩小 K 线 (亦可用鼠标滚轮)"
+                >
+                    <ZoomOut className="size-3.5" />
+                </button>
+                {isZoomed && (
+                    <button
+                        type="button"
+                        onClick={handleResetZoom}
+                        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-brand-ink bg-brand-soft hover:bg-brand-soft/80 transition-colors"
+                        title="重置全景视野"
+                    >
+                        <RotateCcw className="size-3" />
+                        <span>全貌</span>
+                    </button>
+                )}
+            </div>
+
             {/* 周期切换 */}
             <div className="flex items-center rounded-lg bg-page/60 p-0.5 border border-line">
                 {PERIODS.map(({ id, label }) => (
@@ -245,7 +418,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
     return (
         <Panel
             title="实时价格走势"
-            sub={isCandle ? "经典专业蜡烛线 · 叠加 MA5 / MA10 / MA20 均线与成交量副图" : "原生分时走势 · 白色现价线与黄色分时均价线 (VWAP)"}
+            sub={isCandle ? "经典专业蜡烛线 · 鼠标滚轮缩放 / 按住左右拖放 · 叠加 MA 与 VOL 副图" : "原生分时走势 · 白色现价线与黄色分时均价线 (VWAP)"}
             action={action}
         >
             <div className="flex flex-col gap-2 p-4">
@@ -274,7 +447,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                     </div>
                 </div>
 
-                {/* K线指标图例 (MA5/MA10/MA20) 或 分时图例 (白现价/黄均价) */}
+                {/* K线指标图例 (MA5/MA10/MA20) 与 缩放拖放操作提示 */}
                 <div className="flex flex-wrap items-center gap-4 text-[11px] font-medium">
                     {isCandle ? (
                         <>
@@ -311,9 +484,18 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                             )}
                         </>
                     )}
-                    <span className="ml-auto text-faint">
-                        VOL 副图成交量: <strong className="num text-foreground">{formatVol(activeVolume, market)}</strong>
-                    </span>
+
+                    <div className="ml-auto flex items-center gap-3 text-faint">
+                        {totalBars > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-page/40 px-2 py-0.5 rounded border border-line">
+                                <MoveHorizontal className="size-3 text-brand-ink" />
+                                显示 {visiblePoints.length}/{totalBars} 根 (按住拖放 / 滚轮缩放)
+                            </span>
+                        )}
+                        <span>
+                            VOL: <strong className="num text-foreground">{formatVol(activeVolume, market)}</strong>
+                        </span>
+                    </div>
                 </div>
 
                 {/* SVG 主图与副图区域 */}
@@ -325,9 +507,16 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                     ) : coords.length > 1 ? (
                         <svg
                             viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                            className="size-full overflow-visible select-none"
+                            className="size-full overflow-visible select-none cursor-crosshair active:cursor-grabbing"
                             preserveAspectRatio="none"
-                            onMouseLeave={() => setHoverIndex(null)}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={() => {
+                                handleMouseUp();
+                                setHoverIndex(null);
+                            }}
+                            onWheel={handleWheel}
                         >
                             <defs>
                                 <linearGradient id={`chart-grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
@@ -379,7 +568,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                                                     x2={c.x}
                                                     y2={c.yLow}
                                                     stroke={candleColor}
-                                                    strokeWidth="1.2"
+                                                    strokeWidth={Math.max(1, barW * 0.16)}
                                                 />
                                                 {/* 蜡烛实体 */}
                                                 <rect
@@ -456,7 +645,7 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
 
                             {/* 4. 十字准星与悬停吸附 */}
                             {hoverIndex != null && coords[hoverIndex] && (
-                                <g>
+                                <g pointerEvents="none">
                                     {/* 垂直十字虚线 */}
                                     <line
                                         x1={coords[hoverIndex].x}
@@ -504,7 +693,11 @@ export default function YahooStockChart({ symbol, tvSymbol }: { symbol: string; 
                                         height={svgHeight}
                                         fill="transparent"
                                         className="cursor-crosshair"
-                                        onMouseEnter={() => setHoverIndex(i)}
+                                        onMouseEnter={() => {
+                                            if (!isDragging.current) {
+                                                setHoverIndex(i);
+                                            }
+                                        }}
                                     />
                                 );
                             })}
