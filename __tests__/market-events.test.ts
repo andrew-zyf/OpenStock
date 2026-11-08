@@ -47,6 +47,17 @@ describe('calendar-date and event provenance', () => {
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({ symbol: '600519.SS', date: '2026-11-10', certainty: 'estimated' });
     });
+    it('identifies CN appointments by symbol, report period and kind, excluding the scheduled date', () => {
+        const row = { SECUCODE: '600519.SH', REPORT_DATE: '2026-09-30 00:00:00', APPOINT_PUBLISH_DATE: '2026-11-10', IS_PUBLISH: '0' };
+        const first = parseCnDisclosureEvents([row], ['600519.SH'], now)[0];
+        const moved = parseCnDisclosureEvents([{ ...row, APPOINT_PUBLISH_DATE: '2026-11-12' }], ['600519.SH'], now)[0];
+        expect(first.id).toBe(moved.id);
+        expect(first.versionIdentity).toBe('em:600519.SS:2026-09-30:earnings');
+        expect(parseCnDisclosureEvents([{ ...row, REPORT_DATE: '' }], ['600519.SH'], now)).toEqual([]);
+        expect(parseCnDisclosureEvents([{ ...row, APPOINT_PUBLISH_DATE: '2026-11-20' }], ['600519.SH'], now)).toEqual([]);
+        expect(parseCnDisclosureEvents([{ ...row, APPOINT_PUBLISH_DATE: '2026-11-20' }], ['600519.SH'], now, false)).toHaveLength(1);
+        expect(parseTwseEvents([{ Date: '1151113', Code: '2330' }], ['2330.TW'], now)[0].versionIdentity).toBeUndefined();
+    });
     it('does not pretend a common board lot applies to every security', () => {
         const hk = renderToStaticMarkup(createElement(TradingContext, { symbol: '09988.HK' }));
         expect(hk).toContain('每手股数尚未核验');

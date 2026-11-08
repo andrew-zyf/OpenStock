@@ -22,6 +22,12 @@ describe('review journal form and append payload', () => {
         expect(html).not.toContain('disabled=');
         expect(html).not.toContain('aria-invalid="true"');
     });
+    it('keeps archived journals read-only without correction or append controls', () => {
+        const html = renderToStaticMarkup(<WatchlistJournal entry={{ symbol: 'AAPL', company: 'Apple', addedAt: '2026-11-01T00:00:00Z', reviewStatus: 'watching', archivedAt: '2026-11-08T00:00:00Z' }} onSaved={vi.fn()} onClose={vi.fn()} />);
+        expect(html).toContain('历史只读');
+        expect(html).not.toContain('<form');
+        expect(renderToStaticMarkup(<JournalRecord entry={review} />)).not.toContain('追加更正（保留原文）');
+    });
     it('rejects empty, invalid or future trading dates and requires all three texts after interaction', () => {
         expect(validateReviewDraft({ ...draft, tradingDate: '', hypothesis: ' ', changes: '', conclusion: '' }, '2026-11-06')).toHaveProperty('tradingDate');
         expect(validateReviewDraft({ ...draft, tradingDate: '2026-02-30' })).toHaveProperty('tradingDate');

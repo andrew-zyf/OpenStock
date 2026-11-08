@@ -1,11 +1,13 @@
 'use server';
 
-import { optionalNumber } from '@/lib/market/contracts';
+import { optionalNumber, type SourceMetadata } from '@/lib/market/contracts';
 import { identifyMarketAndCode, type MarketType } from '@/lib/market/instrument';
 import { canonicalNewsTargets, knownCompanyName, newsAssociation, normalizeName, traditionalCompanyQuery, type NewsTarget } from '@/lib/news/relevance';
 
+export type MarketResourceMetadata = SourceMetadata & { coverage: string; error?: string };
+
 export type ChinaMarketMacro = {
-    totalTurnoverYi: number;
+    totalTurnoverYi?: number;
     totalTurnoverText: string;
     shTurnoverText: string;
     szTurnoverText: string;
@@ -14,7 +16,7 @@ export type ChinaMarketMacro = {
     upCount?: number;
     downCount?: number;
     flatCount?: number;
-    updateTime: string;
+    sources: { turnover: MarketResourceMetadata; breadth: MarketResourceMetadata; fx: MarketResourceMetadata };
 };
 
 export type SectorFlowItem = {
@@ -37,109 +39,89 @@ export type ChineseNewsItem = {
     source?: string;
 };
 
-export async function getChinaMarketMacro(): Promise<ChinaMarketMacro | null> {
-    try {
-        const [sinaRes, yahooRes, breadthRes] = await Promise.all([
-            fetch('http://hq.sinajs.cn/list=s_sh000001,s_sz399001', {
-                headers: { Referer: 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0' },
-                next: { revalidate: 60 },
-            }),
-            fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDCNH=X?interval=1d&range=1d', {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                next: { revalidate: 300 },
-            }).catch(() => null),
-            fetch('http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f12,f14,f104,f105,f106', {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                next: { revalidate: 30 },
-            }).catch(() => null),
-        ]);
-
-        if (!sinaRes.ok) return null;
-        const buffer = await sinaRes.arrayBuffer();
-        const text = new TextDecoder('gbk').decode(buffer);
-
-        // Parse Shanghai & Shenzhen turnover
-        const shMatch = text.match(/hq_str_s_sh000001="([^"]+)"/);
-        const szMatch = text.match(/hq_str_s_sz399001="([^"]+)"/);
-
-        let shWan = 0;
-        let szWan = 0;
-        if (shMatch) {
-            const parts = shMatch[1].split(',');
-            shWan = Number(parts[5]) || 0;
-        }
-        if (szMatch) {
-            const parts = szMatch[1].split(',');
-            szWan = Number(parts[5]) || 0;
-        }
-
-        const totalWan = shWan + szWan;
-        const totalYi = Math.round(totalWan / 10000);
-        const shYi = Math.round(shWan / 10000);
-        const szYi = Math.round(szWan / 10000);
-
-        let totalTurnoverText = '';
-        if (totalYi >= 10000) {
-            totalTurnoverText = `${(totalYi / 10000).toFixed(2)} 万亿元 (${totalYi.toLocaleString()} 亿)`;
-        } else {
-            totalTurnoverText = `${totalYi.toLocaleString()} 亿元`;
-        }
-
-        // Parse USD/CNH
-        let usdcnhRate: number | undefined;
-        let usdcnhChangePercent: number | undefined;
-        if (yahooRes && yahooRes.ok) {
-            const yahooJson = await yahooRes.json();
-            const meta = yahooJson?.chart?.result?.[0]?.meta;
-            if (meta?.regularMarketPrice) {
-                usdcnhRate = meta.regularMarketPrice;
-                usdcnhChangePercent = meta.regularMarketChangePercent;
-            }
-        }
-
-        // Parse Market Breadth (上涨 / 下跌 / 平盘家数)
-        let upCount: number | undefined;
-        let downCount: number | undefined;
-        let flatCount: number | undefined;
-        if (breadthRes && breadthRes.ok) {
-            const bJson = await breadthRes.json();
-            const diff = bJson?.data?.diff;
-            if (Array.isArray(diff) && diff.length > 0) {
-                let u = 0;
-                let d = 0;
-                let f = 0;
-                for (const item of diff) {
-                    u += Number(item.f104) || 0;
-                    d += Number(item.f105) || 0;
-                    f += Number(item.f106) || 0;
-                }
-                if (u + d + f > 0) {
-                    upCount = u;
-                    downCount = d;
-                    flatCount = f;
-                }
-            }
-        }
-
-        const now = new Date();
-        const updateTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-        return {
-            totalTurnoverYi: totalYi,
-            totalTurnoverText,
-            shTurnoverText: `${shYi.toLocaleString()} 亿`,
-            szTurnoverText: `${szYi.toLocaleString()} 亿`,
-            usdcnhRate,
-            usdcnhChangePercent,
-            upCount,
-            downCount,
-            flatCount,
-            updateTime,
+export async function getChinaMarketMacro(): Promise<ChinaMarketMacro> {
+    const turnover = async () => {
+        const res = await fetch('http://hq.sinajs.cn/list=s_sh000001,s_sz399001', {
+            headers: { Referer: 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0' },
+            next: { revalidate: 60 }, signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) throw new Error('成交额来源响应失败');
+        const text = new TextDecoder('gbk').decode(await res.arrayBuffer());
+        const amount = (code: string) => {
+            const raw = text.match(new RegExp(`hq_str_s_${code}="([^"]*)"`))?.[1].split(',')[5];
+            const value = optionalNumber(raw);
+            return value != null && value >= 0 ? value : undefined;
         };
-    } catch (e) {
-        console.error('China market macro error', e);
-        return null;
-    }
+        const sh = amount('sh000001');
+        const sz = amount('sz399001');
+        const totalTurnoverYi = sh != null && sz != null ? (sh + sz) / 10000 : undefined;
+        const format = (value?: number) => value == null ? '—' : `${Math.round(value / 10000).toLocaleString('zh-CN')} 亿`;
+        return {
+            totalTurnoverYi,
+            totalTurnoverText: totalTurnoverYi == null ? '—' : totalTurnoverYi >= 10000
+                ? `${(totalTurnoverYi / 10000).toFixed(2)} 万亿元 (${Math.round(totalTurnoverYi).toLocaleString('zh-CN')} 亿)`
+                : `${Math.round(totalTurnoverYi).toLocaleString('zh-CN')} 亿元`,
+            shTurnoverText: format(sh), szTurnoverText: format(sz),
+            metadata: { source: '新浪指数简表', fetchedAt: new Date().toISOString(),
+                coverage: `A股（沪深）指数接口成交额字段；沪市${sh == null ? '缺失' : '已返回'}、深市${sz == null ? '缺失' : '已返回'}；不含北交所` },
+        };
+    };
+    const fx = async () => {
+        const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDCNH=X?interval=1d&range=1d', {
+            headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 }, signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) throw new Error('汇率来源响应失败');
+        const meta = (await res.json())?.chart?.result?.[0]?.meta;
+        if (!meta || typeof meta !== 'object') throw new Error('汇率来源数据格式不可用');
+        const seconds = optionalNumber(meta.regularMarketTime);
+        const time = seconds != null && seconds > 0 ? new Date(seconds * 1000) : undefined;
+        return {
+            usdcnhRate: optionalNumber(meta.regularMarketPrice),
+            usdcnhChangePercent: optionalNumber(meta.regularMarketChangePercent),
+            metadata: { source: 'Yahoo Finance', fetchedAt: new Date().toISOString(),
+                asOf: time && Number.isFinite(time.getTime()) ? time.toISOString() : undefined,
+                coverage: 'USD/CNH 离岸人民币报价；不代表北向资金或港股流动性' },
+        };
+    };
+    const breadth = async () => {
+        const res = await fetch('http://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f12,f14,f104,f105,f106', {
+            headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 30 }, signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) throw new Error('涨跌分布来源响应失败');
+        const diff = (await res.json())?.data?.diff;
+        if (!Array.isArray(diff)) throw new Error('涨跌分布来源数据格式不可用');
+        const rows = ['000001', '399001'].map((code) => diff.find((item) => item && item.f12 === code));
+        const count = (value: unknown) => {
+            const number = optionalNumber(value);
+            return number != null && Number.isInteger(number) && number >= 0 ? number : undefined;
+        };
+        const sum = (field: string) => {
+            const values = rows.map((item) => count(item?.[field]));
+            return values.every((value) => value != null) ? values.reduce<number>((total, value) => total + value!, 0) : undefined;
+        };
+        return {
+            upCount: sum('f104'), downCount: sum('f105'), flatCount: sum('f106'),
+            metadata: { source: '东方财富指数涨跌家数', fetchedAt: new Date().toISOString(),
+                coverage: `A股（沪深）指数接口统计样本；完整字段 ${rows.filter((item) => ['f104', 'f105', 'f106'].every((field) => count(item?.[field]) != null)).length}/2 个市场；不含北交所，不代表全A股` },
+        };
+    };
+    const [turnoverResult, breadthResult, fxResult] = await Promise.allSettled([turnover(), breadth(), fx()]);
+    const missing = (source: string, coverage: string): MarketResourceMetadata => ({ source, coverage, fetchedAt: new Date().toISOString(), error: '来源请求失败' });
+    const amounts = turnoverResult.status === 'fulfilled' ? turnoverResult.value : undefined;
+    const counts = breadthResult.status === 'fulfilled' ? breadthResult.value : undefined;
+    const currency = fxResult.status === 'fulfilled' ? fxResult.value : undefined;
+    return {
+        totalTurnoverYi: amounts?.totalTurnoverYi,
+        totalTurnoverText: amounts?.totalTurnoverText ?? '—',
+        shTurnoverText: amounts?.shTurnoverText ?? '—', szTurnoverText: amounts?.szTurnoverText ?? '—',
+        upCount: counts?.upCount, downCount: counts?.downCount, flatCount: counts?.flatCount,
+        usdcnhRate: currency?.usdcnhRate, usdcnhChangePercent: currency?.usdcnhChangePercent,
+        sources: {
+            turnover: turnoverResult.status === 'fulfilled' ? turnoverResult.value.metadata : missing('新浪指数简表', 'A股（沪深）成交额不可用；不含北交所'),
+            breadth: breadthResult.status === 'fulfilled' ? breadthResult.value.metadata : missing('东方财富指数涨跌家数', 'A股（沪深）指数统计样本不可用；不含北交所'),
+            fx: fxResult.status === 'fulfilled' ? fxResult.value.metadata : missing('Yahoo Finance', 'USD/CNH 报价不可用'),
+        },
+    };
 }
 
 export type ChinaSectorRankings = {
@@ -147,6 +129,8 @@ export type ChinaSectorRankings = {
     topInflows: SectorFlowItem[];
     errors?: { topGainers?: string; topInflows?: string };
     fetchedAt: string;
+    topGainersMetadata?: MarketResourceMetadata;
+    topInflowsMetadata?: MarketResourceMetadata;
 };
 
 export async function getChinaSectorRankings(): Promise<ChinaSectorRankings> {
@@ -187,12 +171,16 @@ export async function getChinaSectorRankings(): Promise<ChinaSectorRankings> {
         if (!res.ok) throw new Error(`板块来源响应 ${res.status}`);
         const json = await res.json();
         if (!Array.isArray(json?.data?.diff)) throw new Error('板块来源数据格式不可用');
-        return parseSectorList(json.data.diff);
+        const items = parseSectorList(json.data.diff);
+        return { items, metadata: { source: '东方财富行业板块排行', fetchedAt: new Date().toISOString(),
+            coverage: `A股行业板块来源排行前15条，去重后展示 ${items.length} 个；${field === 'f3' ? '按来源板块涨跌幅降序' : '按来源主力净流入分类降序；主力为来源订单规模分类，不等于机构身份'}` } };
     };
     const [gainers, inflows] = await Promise.allSettled([load('f3'), load('f62')]);
     return {
-        topGainers: gainers.status === 'fulfilled' ? gainers.value : [],
-        topInflows: inflows.status === 'fulfilled' ? inflows.value : [],
+        topGainers: gainers.status === 'fulfilled' ? gainers.value.items : [],
+        topInflows: inflows.status === 'fulfilled' ? inflows.value.items : [],
+        topGainersMetadata: gainers.status === 'fulfilled' ? gainers.value.metadata : { source: '东方财富行业板块排行', fetchedAt: new Date().toISOString(), coverage: 'A股行业板块涨跌幅排行样本不可用', error: '来源请求失败' },
+        topInflowsMetadata: inflows.status === 'fulfilled' ? inflows.value.metadata : { source: '东方财富行业板块排行', fetchedAt: new Date().toISOString(), coverage: 'A股行业板块资金分类排行样本不可用', error: '来源请求失败' },
         errors: {
             topGainers: gainers.status === 'rejected' ? '领涨板块更新失败' : undefined,
             topInflows: inflows.status === 'rejected' ? '资金板块更新失败' : undefined,

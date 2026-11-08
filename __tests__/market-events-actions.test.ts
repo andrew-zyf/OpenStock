@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventInput } from '@/lib/market/events';
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), watchlist: vi.fn(), find: vi.fn(), findOne: vi.fn(), create: vi.fn(), count: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), watchlist: vi.fn(), find: vi.fn(), findOne: vi.fn(), create: vi.fn(), count: vi.fn(), update: vi.fn(), observe: vi.fn() }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: mocks.connect }));
+vi.mock('@/lib/market/research-changes', () => ({ observeAutomaticEvents: mocks.observe }));
 vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.auth }));
 vi.mock('@/lib/actions/watchlist.actions', () => ({ getUserWatchlist: mocks.watchlist }));
 vi.mock('@/database/models/market-event.model', () => ({ MarketEventRecord: { find: mocks.find, findOne: mocks.findOne, create: mocks.create, countDocuments: mocks.count, updateOne: mocks.update } }));
@@ -11,7 +12,7 @@ const input: EventInput = { symbol: '2330.TW', date: '2026-11-13', title: '核�
 const row = { ...input, _id: 'abcdef012345678901234567', userId: 'user-a', createdAt: new Date('2026-11-08T01:00:00Z') };
 beforeEach(() => {
     vi.clearAllMocks(); vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-08T01:00:00Z'));
-    mocks.auth.mockResolvedValue('user-a'); mocks.connect.mockResolvedValue(undefined);
+    mocks.auth.mockResolvedValue('user-a'); mocks.connect.mockResolvedValue(undefined); mocks.observe.mockResolvedValue(undefined);
     mocks.watchlist.mockResolvedValue([{ symbol: '2330.TW', company: '台積電' }]);
     mocks.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) });
     mocks.findOne.mockReturnValue({ lean: async () => null }); mocks.count.mockResolvedValue(0);
@@ -115,6 +116,36 @@ describe('authenticated event calendar actions', () => {
         expect((await getWatchlistEvents()).sources[0].status).toBe('ready');
         vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
         expect((await getWatchlistEvents()).sources[0].status).toBe('error');
+    });
+    it('observes concrete versions during normal refresh even when the new date leaves the calendar window', async () => {
+        mocks.watchlist.mockResolvedValue([{ symbol: '600519.SH' }]);
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ success: true, result: { data: [
+            { SECUCODE: '600519.SH', REPORT_DATE: '2026-09-30', APPOINT_PUBLISH_DATE: '2026-11-20', IS_PUBLISH: '0' },
+        ] } }) })));
+        const result = await getWatchlistEvents();
+        expect(result.events).toEqual([]);
+        expect(mocks.observe).toHaveBeenCalledWith('user-a', [expect.objectContaining({ date: '2026-11-20', versionIdentity: 'em:600519.SS:2026-09-30:earnings' })], expect.any(Date));
+        expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('pageSize=1000');
+    });
+    it('never observes absent rows as cancellations for failure, empty results or membership exit', async () => {
+        mocks.watchlist.mockResolvedValue([{ symbol: '600519.SH' }]);
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
+        await getWatchlistEvents();
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ code: 9201, result: null }) })));
+        await getWatchlistEvents();
+        mocks.watchlist.mockResolvedValue([]);
+        await getWatchlistEvents();
+        expect(mocks.observe).not.toHaveBeenCalled();
+    });
+    it('reports persistence failure separately while retaining the actual source events', async () => {
+        mocks.watchlist.mockResolvedValue([{ symbol: '600519.SH' }]);
+        mocks.observe.mockRejectedValueOnce(new Error('storage unavailable'));
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ success: true, result: { data: [
+            { SECUCODE: '600519.SH', REPORT_DATE: '2026-09-30', APPOINT_PUBLISH_DATE: '2026-11-10', IS_PUBLISH: '0' },
+        ] } }) })));
+        const result = await getWatchlistEvents();
+        expect(result.events).toHaveLength(1);
+        expect(result.sources).toContainEqual(expect.objectContaining({ source: '事件变化留存', status: 'error' }));
     });
     it('isolates an upstream timeout and preserves manually entered events', async () => {
         mocks.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [row] }) }) });

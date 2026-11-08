@@ -72,6 +72,16 @@ export async function getUserAlerts() {
     }
 }
 
+// Stop future sampling without deleting trigger or delivery evidence.
+export async function pauseAlert(alertId: string) {
+    const userId = await requireUserId();
+    if (typeof alertId !== 'string' || !/^[a-f\d]{24}$/i.test(alertId)) throw new Error('无效的预警编号');
+    await connectToDatabase();
+    const result = await Alert.updateOne({ _id: alertId, userId, triggered: false }, { $set: { active: false } });
+    revalidatePath('/watchlist');
+    return { success: result.matchedCount > 0 };
+}
+
 // Delete an alert
 export async function deleteAlert(alertId: string) {
     const userId = await requireUserId();

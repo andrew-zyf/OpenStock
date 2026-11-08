@@ -72,6 +72,16 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
     const live = quotes.data ?? {};
 
     useEffect(() => setBaseRows(initialRows), [initialRows]);
+    useEffect(() => {
+        function openReview(event: Event) {
+            const symbol = (event as CustomEvent<string>).detail;
+            if (!initialRows.some(row => row.symbol === symbol)) return;
+            setJournals(current => current.includes(symbol) ? current : [...current, symbol]);
+            requestAnimationFrame(() => document.getElementById(`${id}-journal-${symbol.replace(/[^a-zA-Z0-9]/g, '-')}`)?.scrollIntoView({ block: 'start' }));
+        }
+        window.addEventListener('openstock:open-review', openReview);
+        return () => window.removeEventListener('openstock:open-review', openReview);
+    }, [initialRows, id]);
 
     const liveRows = baseRows.map((row) => {
         const quote = live[row.symbol];

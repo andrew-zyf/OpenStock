@@ -19,6 +19,8 @@ export type WatchlistEntry = {
     symbol: string;
     company: string;
     addedAt: string;
+    /** Absent for active research, including records saved before archiving was introduced. */
+    archivedAt?: string;
     group?: string;
     note?: string;
     invalidation?: string;
@@ -111,8 +113,9 @@ export function snapshotFromQuote(quote: UnifiedQuote | null | undefined): Initi
 }
 
 /** Internal, JSON-serialized persistence shape. Nulls retain intentional clears across legacy aliases. */
-export type SavedWatchlistRecord = Omit<WatchlistEntry, 'reviewStatus' | 'group' | 'note' | 'invalidation' | 'targetPrice' | 'reviewedAt' | 'nextReviewDate' | 'proximityPercent'> & {
+export type SavedWatchlistRecord = Omit<WatchlistEntry, 'archivedAt' | 'reviewStatus' | 'group' | 'note' | 'invalidation' | 'targetPrice' | 'reviewedAt' | 'nextReviewDate' | 'proximityPercent'> & {
     _id: string;
+    archivedAt?: string | null;
     group?: string | null;
     note?: string | null;
     invalidation?: string | null;
@@ -160,6 +163,9 @@ export function mergeWatchlistRecords(records: SavedWatchlistRecord[]): Watchlis
         };
         return {
             symbol, company: company || earliest[0].company, addedAt: earliest[0].addedAt,
+            ...(aliases.every((item) => item.archivedAt) ? {
+                archivedAt: aliases.map((item) => item.archivedAt!).sort().at(-1),
+            } : {}),
             group: fields.group ?? undefined, note: fields.note ?? undefined,
             invalidation: fields.invalidation ?? undefined, targetPrice: fields.targetPrice ?? undefined,
             reviewStatus: fields.reviewStatus || 'watching', reviewedAt: fields.reviewedAt ?? undefined,

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BellRing, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { deleteAlert } from "@/lib/actions/alert.actions";
+import { deleteAlert, pauseAlert } from "@/lib/actions/alert.actions";
 import { alertsEnabled } from "@/lib/market-data";
 import { formatPrice } from "@/lib/utils";
 import { identifyMarketAndCode } from "@/lib/market/instrument";
@@ -43,6 +43,17 @@ const statusOf = (alert: AlertRow) => {
 export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
     const router = useRouter();
     const [pendingId, setPendingId] = useState<string | null>(null);
+
+    const handlePause = async (alert: AlertRow) => {
+        setPendingId(alert._id);
+        try {
+            const result = await pauseAlert(alert._id);
+            if (result.success) toast.success('已停用后续检测，触发与投递记录保留');
+            else toast.error('预警已触发或不存在，请刷新核对');
+            router.refresh();
+        } catch { toast.error('停用预警失败'); }
+        finally { setPendingId(null); }
+    };
 
     const handleDelete = async (alert: AlertRow) => {
         setPendingId(alert._id);
@@ -104,6 +115,7 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
                                 {alert.delivery?.status === 'pending' && alert.delivery.attemptedAt && <p className="text-[12px] text-warn">已尝试投递但结果未确认；为避免重复邮件，不自动重发。</p>}
                             </div>
                             <span className={status.className}>{status.label}</span>
+                            {!alert.triggered && alert.active !== false && <button type="button" className="btn min-h-12" disabled={pendingId === alert._id} onClick={() => void handlePause(alert)} aria-label={`停用 ${alert.symbol} 的预警`}>停用</button>}
                             <button
                                 type="button"
                                 onClick={() => handleDelete(alert)}

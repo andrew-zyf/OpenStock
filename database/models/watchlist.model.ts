@@ -7,6 +7,7 @@ export interface WatchlistItem extends Document {
     symbol: string;
     company: string;
     addedAt: Date;
+    archivedAt?: Date | null;
     group?: string | null;
     note?: string | null;
     invalidation?: string | null;
@@ -37,6 +38,8 @@ const WatchlistSchema = new Schema<WatchlistItem>(
         symbol: { type: String, required: true, uppercase: true, trim: true },
         company: { type: String, required: true, trim: true },
         addedAt: { type: Date, default: Date.now },
+        // Missing/null keeps legacy records active; archiving never removes research history.
+        archivedAt: { type: Date },
         group: { type: String, trim: true, maxlength: OBSERVATION_LIMITS.group },
         note: { type: String, trim: true, maxlength: OBSERVATION_LIMITS.note },
         invalidation: { type: String, trim: true, maxlength: OBSERVATION_LIMITS.invalidation },
@@ -60,3 +63,25 @@ WatchlistSchema.index({ userId: 1, symbol: 1 }, { unique: true });
 
 export const Watchlist: Model<WatchlistItem> =
     (models?.Watchlist as Model<WatchlistItem>) || model<WatchlistItem>('Watchlist', WatchlistSchema);
+
+// A persisted per-user mutex coordinates alias transitions and capacity on standalone MongoDB.
+// Keep the holder's intent for deliberate recovery; never expire/steal a possibly live writer.
+type WatchlistLifecycleState = {
+    _id: string;
+    lockToken?: string | null;
+    operation?: string;
+    symbol?: string | null;
+    acquiredAt?: Date;
+    maintenanceRequired?: boolean;
+};
+const WatchlistLifecycleSchema = new Schema<WatchlistLifecycleState>({
+    _id: { type: String, required: true },
+    lockToken: { type: String },
+    operation: { type: String },
+    symbol: { type: String },
+    acquiredAt: { type: Date },
+    maintenanceRequired: { type: Boolean },
+}, { versionKey: false });
+
+export const WatchlistLifecycle: Model<WatchlistLifecycleState> =
+    (models?.WatchlistLifecycle as Model<WatchlistLifecycleState>) || model<WatchlistLifecycleState>('WatchlistLifecycle', WatchlistLifecycleSchema);

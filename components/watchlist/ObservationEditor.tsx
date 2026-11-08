@@ -104,7 +104,11 @@ export default function ObservationEditor({ entry, currency, onSaved, onClose }:
                 setConflict(result.code === 'CONFLICT');
                 setMessage(result.code === 'CONFLICT'
                     ? '记录已在其他页面更新。草稿仍保留，请复制草稿后重新载入页面，再核对并保存。'
-                    : '该标的已不在自选列表中。草稿仍保留，请核对列表。');
+                    : result.code === 'JOURNAL_CAPACITY'
+                        ? '本次未保存：研究历史已达到单条容量限制。草稿仍保留，请使用下方「研究备份」导出完整 JSON；已有历史不会截断。'
+                        : result.code === 'ARCHIVED'
+                            ? '本次未保存：该研究已归档。草稿仍保留，请在「研究归档」恢复关注后保存。'
+                            : `${result.error} 草稿仍保留。`);
                 return;
             }
             setRevision(result.entry.observationUpdatedAt ?? null);
@@ -127,6 +131,7 @@ export default function ObservationEditor({ entry, currency, onSaved, onClose }:
                 <legend ref={heading} tabIndex={-1} className="font-semibold text-foreground">编辑 {entry.symbol} 观察记录</legend>
                 <p className="text-xs text-faint">文字与关键价均可留空，保存后清除原值。关键价仅作观察记录。</p>
                 <p ref={summary} tabIndex={-1} role="status" aria-live="polite" className="text-sm text-foreground">{message}</p>
+                {message.includes('容量') && <a href="#research-backup" className="inline-block min-h-12 underline">前往研究备份，导出已有历史</a>}
                 {(['group', 'note', 'invalidation'] as const).map((field) => {
                     const label = { group: '自定义分组', note: '观察理由', invalidation: '失效条件' }[field];
                     const maxLength = field === 'group' ? 80 : 2000;

@@ -3,21 +3,22 @@ import { BSON } from 'mongodb';
 import type { SavedWatchlistRecord } from '@/lib/watchlist-observation';
 
 type Row = SavedWatchlistRecord & { userId: string };
-type Query = { userId: string; _id?: string; symbol?: string | { $in: string[] }; observationUpdatedAt?: Date | null; journalVersion?: number | null };
+type Query = { userId: string; _id?: string; symbol?: string | { $in: string[] }; archivedAt?: null | { $ne: null }; observationUpdatedAt?: Date | null; journalVersion?: number | null };
 type Update = { $setOnInsert?: Partial<Row>; $set?: Partial<Row>; $push?: { journal: { $each: NonNullable<Row['journal']> } }; $inc?: { journalVersion: number } };
 const mocks = vi.hoisted(() => ({
-    rows: [] as Row[], user: vi.fn(), connect: vi.fn(), quotes: vi.fn(), revalidate: vi.fn(),
-    find: vi.fn(), findOne: vi.fn(), count: vi.fn(), update: vi.fn(), aggregate: vi.fn(),
+    rows: [] as Row[], locks: new Map<string, Record<string, unknown>>(), lockUpdate: vi.fn(), lockAcquire: vi.fn(), lockFind: vi.fn(),
+    user: vi.fn(), connect: vi.fn(), quotes: vi.fn(), revalidate: vi.fn(),
+    find: vi.fn(), findOne: vi.fn(), count: vi.fn(), update: vi.fn(), updateMany: vi.fn(), aggregate: vi.fn(),
 }));
 vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.user }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: mocks.connect }));
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidate }));
 vi.mock('@/lib/realtime-market', () => ({ fetchRealtimeQuotes: mocks.quotes }));
 vi.mock('@/database/models/watchlist.model', () => ({ Watchlist: {
-    find: mocks.find, findOne: mocks.findOne, countDocuments: mocks.count, findOneAndUpdate: mocks.update, aggregate: mocks.aggregate,
-} }));
+    find: mocks.find, findOne: mocks.findOne, countDocuments: mocks.count, findOneAndUpdate: mocks.update, updateMany: mocks.updateMany, aggregate: mocks.aggregate,
+}, WatchlistLifecycle: { updateOne: mocks.lockUpdate, findOneAndUpdate: mocks.lockAcquire, findById: mocks.lockFind } }));
 
-import { addToWatchlist, getUserWatchlist, updateWatchlistObservation, appendWatchlistReview, getWatchlistJournal } from '@/lib/actions/watchlist.actions';
+import { addToWatchlist, removeFromWatchlist, restoreWatchlist, getArchivedWatchlist, isStockInWatchlist, getUserWatchlist, updateWatchlistObservation, appendWatchlistReview, getWatchlistJournal } from '@/lib/actions/watchlist.actions';
 import { compareJournalEntries, journalTime, getProximityPercent, isMarketDate, type WatchlistReview, type WatchlistReviewInput } from '@/lib/watchlist-review';
 
 const HK_SYMBOL = '00700' + '.HK';
@@ -31,12 +32,29 @@ const row = (symbol = HK_SYMBOL, overrides: Partial<Row> = {}): Row => ({
 function matches(item: Row, query: Query) {
     return item.userId === query.userId && (!query._id || item._id === query._id)
         && (!query.symbol || (typeof query.symbol === 'string' ? item.symbol === query.symbol : query.symbol.$in.includes(item.symbol)))
+        && (!Object.hasOwn(query, 'archivedAt') || (query.archivedAt === null ? item.archivedAt == null : item.archivedAt != null))
         && (!Object.hasOwn(query, 'observationUpdatedAt') || (item.observationUpdatedAt ?? null) === (query.observationUpdatedAt?.toISOString() ?? null))
         && (!Object.hasOwn(query, 'journalVersion') || (item.journalVersion ?? null) === query.journalVersion);
 }
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.rows = [];
+    mocks.locks.clear();
+    mocks.lockUpdate.mockImplementation(async (query: { _id: string; lockToken?: string }, update: { $setOnInsert?: object; $set?: object; $unset?: object }) => {
+        if (!mocks.locks.has(query._id) && update.$setOnInsert) mocks.locks.set(query._id, { _id: query._id });
+        const lock = mocks.locks.get(query._id);
+        if (!lock || (query.lockToken && query.lockToken !== lock.lockToken)) return { modifiedCount: 0 };
+        if (update.$set) Object.assign(lock, update.$set);
+        if (update.$unset) for (const key of Object.keys(update.$unset)) delete lock[key];
+        return { modifiedCount: 1 };
+    });
+    mocks.lockAcquire.mockImplementation(async (query: { _id: string }, update: { $set: object }) => {
+        const lock = mocks.locks.get(query._id);
+        if (!lock || lock.lockToken || lock.maintenanceRequired) return null;
+        Object.assign(lock, update.$set);
+        return lock;
+    });
+    mocks.lockFind.mockImplementation(async (userId: string) => mocks.locks.get(userId));
     mocks.user.mockResolvedValue('owner');
     mocks.quotes.mockResolvedValue({});
     mocks.find.mockImplementation((query: Query) => {
@@ -56,6 +74,14 @@ beforeEach(() => {
                 || (journalTime(item) === beforeTime && item.id < beforeId!)).slice(0, limit);
     });
     mocks.count.mockImplementation(async (query: Query) => mocks.rows.filter((item) => matches(item, query)).length);
+    mocks.updateMany.mockImplementation(async (query: Query, update: Update) => {
+        const selected = mocks.rows.filter((item) => matches(item, query));
+        for (const item of selected) {
+            if (update.$set) Object.assign(item, JSON.parse(JSON.stringify(update.$set)));
+            if (update.$inc) item.journalVersion = (item.journalVersion || 0) + update.$inc.journalVersion;
+        }
+        return { acknowledged: true, modifiedCount: selected.length };
+    });
     mocks.update.mockImplementation(async (query: Query, update: Update) => {
         const existing = mocks.rows.find((item) => matches(item, query));
         if (update.$setOnInsert) {
@@ -207,7 +233,7 @@ describe('authenticated observation updates', () => {
             initialSnapshot: snapshot, reviewStatus: 'validated', reviewedAt: expect.any(String), observationUpdatedAt: expect.any(String),
         } });
         const [query, update] = mocks.update.mock.calls[0];
-        expect(query).toEqual({ _id: 'HKEX:700', userId: 'owner', symbol: 'HKEX:700', observationUpdatedAt: null, journalVersion: null });
+        expect(query).toEqual({ _id: 'HKEX:700', userId: 'owner', symbol: 'HKEX:700', archivedAt: null, observationUpdatedAt: null, journalVersion: null });
         expect(update.$set).not.toHaveProperty('initialSnapshot');
         expect(update.$set).not.toHaveProperty('addedAt');
         expect(mocks.quotes).not.toHaveBeenCalled();
@@ -446,6 +472,21 @@ describe('append-only observation journal', () => {
         expect(all).toContainEqual(expect.objectContaining({ sourceSymbol: 'HKEX:700', modifiedAt: february }));
     });
 
+    it('places the effective merged before-state next to the first edit even when an earlier raw alias already matches it', async () => {
+        mocks.rows = [row('HKEX:700', { note: 'original saved opinion' }), row(HK_SYMBOL, { addedAt: asOf })];
+        expect((await getUserWatchlist())[0].note).toBe('original saved opinion');
+        const result = await updateWatchlistObservation(HK_SYMBOL, { note: 'updated opinion' }, null);
+        expect(result.success).toBe(true);
+        const journal = mocks.rows[0].journal!;
+        expect(journal).toHaveLength(4);
+        expect(journal[0]).toMatchObject({ sourceSymbol: 'HKEX:700', observation: { note: 'original saved opinion' } });
+        expect(journal[1]).toMatchObject({ sourceSymbol: HK_SYMBOL, observation: { reviewStatus: 'watching' } });
+        expect(journal[1].kind === 'observation' && journal[1].observation.note).toBeUndefined();
+        expect(journal[2]).toMatchObject({ source: 'legacy-capture', observation: { note: 'original saved opinion' } });
+        expect(journal[2]).not.toHaveProperty('sourceSymbol');
+        expect(journal[3]).toMatchObject({ source: 'edit', observation: { note: 'updated opinion' } });
+    });
+
     it('captures unknown alias times and full long raw notes without repeating archived aliases', async () => {
         const first = '甲'.repeat(1000);
         const second = '乙'.repeat(1000);
@@ -472,7 +513,7 @@ describe('append-only observation journal', () => {
     it('rejects document capacity explicitly without truncating or dropping an entry', async () => {
         const huge = savedReview({ conclusion: 'x'.repeat(12 * 1024 * 1024) });
         mocks.rows = [row(HK_SYMBOL, { journal: [huge] })];
-        await expect(updateWatchlistObservation(HK_SYMBOL, { note: 'New' })).rejects.toThrow('容量限制');
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'New' })).toMatchObject({ success: false, code: 'JOURNAL_CAPACITY', error: expect.stringContaining('容量限制') });
         expect(mocks.update).not.toHaveBeenCalled();
         expect(mocks.rows[0].journal).toEqual([huge]);
     });
@@ -664,6 +705,218 @@ describe('immutable daily review actions', () => {
     ])('validates untrusted review fields before database access %j', async (patch) => {
         await expect(appendWatchlistReview(HK_SYMBOL, reviewInput(patch as never))).rejects.toThrow();
         expect(mocks.connect).not.toHaveBeenCalled();
+    });
+});
+
+describe('research archive lifecycle', () => {
+    it('archives every owned alias without deleting any identity, snapshot or journal, then restores on add', async () => {
+        mocks.rows = [row('HKEX:700', { note: 'Original thesis', initialSnapshot: snapshot, journal: [savedReview()], journalVersion: 3 }),
+            row('0700.HK', { addedAt: asOf, invalidation: 'Debt', journal: [savedReview({ id: 'alias-review', clientRequestId: 'alias' })] }),
+            row(HK_SYMBOL, { userId: 'someone-else', note: 'Private' }), row('AAPL', { archivedAt: null })];
+        const before = JSON.parse(JSON.stringify(mocks.rows)) as Row[];
+        await removeFromWatchlist(HK_SYMBOL);
+        expect(mocks.rows).toHaveLength(4);
+        for (const [index, item] of mocks.rows.slice(0, 2).entries()) {
+            expect(item).toEqual({ ...before[index], archivedAt: expect.any(String), journalVersion: (before[index].journalVersion || 0) + 1 });
+        }
+        expect(mocks.rows.slice(2)).toEqual(before.slice(2));
+        expect(await isStockInWatchlist('0700.HK')).toBe(false);
+        expect((await getUserWatchlist()).map((entry) => entry.symbol)).toEqual(['AAPL']);
+        expect(await getArchivedWatchlist()).toEqual([expect.objectContaining({ symbol: HK_SYMBOL, archivedAt: expect.any(String), initialSnapshot: snapshot, note: 'Original thesis' })]);
+        const page = await getWatchlistJournal('0700.HK', { limit: 100 });
+        expect(page.success && page.entries.map((entry) => entry.id)).toEqual(['review-1', 'alias-review']);
+        const once = JSON.stringify(mocks.rows);
+        await removeFromWatchlist('HKEX:700');
+        expect(JSON.stringify(mocks.rows)).toBe(once);
+        const restored = await addToWatchlist('0700.HK', 'Replacement name');
+        expect(restored).toMatchObject({ symbol: HK_SYMBOL, company: 'Tencent', addedAt, note: 'Original thesis', initialSnapshot: snapshot });
+        expect(restored).not.toHaveProperty('archivedAt');
+        expect(mocks.rows.slice(0, 2)).toEqual(before.slice(0, 2).map((item) => ({ ...item, archivedAt: null, journalVersion: (item.journalVersion || 0) + 2 })));
+        expect(await isStockInWatchlist(HK_SYMBOL)).toBe(true);
+        expect(await getArchivedWatchlist()).toEqual([]);
+        expect(mocks.quotes).not.toHaveBeenCalled();
+    });
+
+    it('counts only active records for insertion and restoration and never spends a slot on an existing active add', async () => {
+        mocks.rows = Array.from({ length: 50 }, (_, index) => row(`OLD${index}`, { archivedAt: asOf }));
+        expect(await addToWatchlist('AAPL', 'Apple')).toMatchObject({ symbol: 'AAPL' });
+        expect(mocks.count).toHaveBeenCalledWith({ userId: 'owner', archivedAt: null });
+        mocks.rows = [...Array.from({ length: 50 }, (_, index) => row(`ACTIVE${index}`)), row(HK_SYMBOL, { archivedAt: asOf, initialSnapshot: snapshot })];
+        const before = JSON.stringify(mocks.rows);
+        expect(await restoreWatchlist('HKEX:700')).toMatchObject({ success: false, code: 'WATCHLIST_CAPACITY' });
+        expect(await addToWatchlist('0700.HK', 'Replacement')).toHaveProperty('error');
+        expect(await addToWatchlist('MSFT', 'Microsoft')).toHaveProperty('error');
+        expect(await addToWatchlist('ACTIVE0', 'Replacement')).toMatchObject({ symbol: 'ACTIVE0' });
+        expect(JSON.stringify(mocks.rows)).toBe(before);
+        await removeFromWatchlist('ACTIVE0');
+        expect(await restoreWatchlist(HK_SYMBOL)).toMatchObject({ success: true, entry: { symbol: HK_SYMBOL, initialSnapshot: snapshot } });
+        const updates = mocks.updateMany.mock.calls.length;
+        expect(await restoreWatchlist('HKEX:700')).toMatchObject({ success: true });
+        expect(mocks.updateMany).toHaveBeenCalledTimes(updates);
+    });
+
+    it('requires authentication and scopes restoration and archived reads to the current user', async () => {
+        mocks.rows = [row(HK_SYMBOL, { userId: 'someone-else', archivedAt: asOf })];
+        expect(await restoreWatchlist('HKEX:700')).toMatchObject({ code: 'NOT_FOUND' });
+        expect(await getArchivedWatchlist()).toEqual([]);
+        expect(mocks.updateMany).not.toHaveBeenCalled();
+        mocks.user.mockRejectedValue(new Error('Unauthorized'));
+        await expect(restoreWatchlist(HK_SYMBOL)).rejects.toThrow('Unauthorized');
+        await expect(getArchivedWatchlist()).rejects.toThrow('Unauthorized');
+        await expect(removeFromWatchlist(HK_SYMBOL)).rejects.toThrow('Unauthorized');
+    });
+
+    it('blocks new edits and reviews while archived but preserves exact review retries and their atomic entries', async () => {
+        mocks.rows = [row(HK_SYMBOL, { nextReviewDate: '2026-11-09' })];
+        const input = reviewInput({ nextReviewDate: '2026-11-13' });
+        const saved = await appendWatchlistReview(HK_SYMBOL, input);
+        if (!saved.success) throw new Error(saved.error);
+        await removeFromWatchlist(HK_SYMBOL);
+        const before = JSON.stringify(mocks.rows);
+        mocks.quotes.mockClear();
+        mocks.update.mockClear();
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'Edit' })).toMatchObject({ success: false, code: 'ARCHIVED' });
+        expect(await appendWatchlistReview(HK_SYMBOL, reviewInput({ clientRequestId: 'new' }))).toMatchObject({ success: false, code: 'ARCHIVED' });
+        expect(await appendWatchlistReview(HK_SYMBOL, input)).toMatchObject({ success: true, deduplicated: true, review: saved.review, entries: JSON.parse(JSON.stringify(saved.entries)), entry: { archivedAt: expect.any(String) } });
+        expect(await appendWatchlistReview(HK_SYMBOL, { ...input, conclusion: 'Changed' })).toMatchObject({ code: 'CONFLICT' });
+        expect(JSON.stringify(mocks.rows)).toBe(before);
+        expect(mocks.quotes).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['archive', 'archive-and-restore'] as const)('serializes a concurrent %s after the atomic observation write', async (race) => {
+        mocks.rows = [row(HK_SYMBOL, { note: 'Before' })];
+        const save = mocks.update.getMockImplementation()!;
+        let archive: ReturnType<typeof removeFromWatchlist> | undefined;
+        mocks.update.mockImplementationOnce(async (query: Query, update: Update) => {
+            archive = removeFromWatchlist(HK_SYMBOL);
+            expect(mocks.updateMany).not.toHaveBeenCalled();
+            return save(query, update);
+        });
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'Racing edit' })).toMatchObject({ success: true });
+        expect(await archive).toMatchObject({ success: true });
+        if (race === 'archive-and-restore') expect(await restoreWatchlist(HK_SYMBOL)).toMatchObject({ success: true });
+        expect(mocks.rows[0].note).toBe('Racing edit');
+        expect(mocks.rows[0].journal).toHaveLength(2);
+        expect(Boolean(mocks.rows[0].archivedAt)).toBe(race === 'archive');
+    });
+
+    it('serializes archive after an append without splitting its review and next-plan batch', async () => {
+        mocks.rows = [row(HK_SYMBOL, { nextReviewDate: '2026-11-09' })];
+        const save = mocks.update.getMockImplementation()!;
+        let archive: ReturnType<typeof removeFromWatchlist> | undefined;
+        mocks.update.mockImplementationOnce(async (query: Query, update: Update) => {
+            archive = removeFromWatchlist(HK_SYMBOL);
+            return save(query, update);
+        });
+        const review = await appendWatchlistReview(HK_SYMBOL, reviewInput({ nextReviewDate: '2026-11-20' }));
+        expect(review).toMatchObject({ success: true });
+        expect(await archive).toMatchObject({ success: true });
+        expect(mocks.rows[0].nextReviewDate).toBe('2026-11-20');
+        expect(mocks.rows[0].journal).toHaveLength(3);
+        expect(mocks.rows[0].archivedAt).toEqual(expect.any(String));
+    });
+
+    it('prevents the reproduced A-archive/restore/B-archive split and hides intermediate aliases from readers', async () => {
+        mocks.rows = [row('HKEX:700', { note: 'Original alias', initialSnapshot: snapshot }),
+            row(HK_SYMBOL, { note: 'Authoritative opinion', observationUpdatedAt: asOf })];
+        const apply = mocks.updateMany.getMockImplementation()!;
+        let firstChanged!: () => void;
+        let resume!: () => void;
+        const changed = new Promise<void>((resolve) => { firstChanged = resolve; });
+        const paused = new Promise<void>((resolve) => { resume = resolve; });
+        mocks.updateMany.mockImplementationOnce(async (query: Query, update: Update) => {
+            await apply({ ...query, _id: 'HKEX:700' }, update);
+            firstChanged();
+            await paused;
+            await apply({ ...query, _id: HK_SYMBOL }, update);
+            return { modifiedCount: 2 };
+        });
+        const archive = removeFromWatchlist(HK_SYMBOL);
+        await changed;
+        expect(mocks.rows.map((item) => Boolean(item.archivedAt))).toEqual([true, false]);
+        const restore = restoreWatchlist(HK_SYMBOL);
+        const active = getUserWatchlist();
+        const archived = getArchivedWatchlist();
+        // All concurrent actions must wait at the mutex instead of observing half an alias group.
+        await vi.waitFor(() => expect(mocks.lockAcquire.mock.calls.length).toBeGreaterThanOrEqual(4));
+        expect(mocks.updateMany).toHaveBeenCalledTimes(1);
+        resume();
+        expect(await archive).toMatchObject({ success: true });
+        expect(await restore).toMatchObject({ success: true });
+        expect((await active)[0]).toMatchObject({ note: 'Authoritative opinion', initialSnapshot: snapshot });
+        expect(await archived).toEqual([]);
+        expect(mocks.rows.every((item) => item.archivedAt === null)).toBe(true);
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'Can still edit' }, asOf)).toMatchObject({ success: true });
+    });
+
+    it.each(['restore', 'add'] as const)('serializes two distinct concurrent %ss when only one of 50 slots remains', async (operation) => {
+        mocks.rows = [...Array.from({ length: 49 }, (_, index) => row(`ACTIVE${index}`)),
+            ...(operation === 'restore' ? [row('AAPL', { archivedAt: asOf }), row('MSFT', { archivedAt: asOf })] : [])];
+        const results = operation === 'restore'
+            ? await Promise.all([restoreWatchlist('AAPL'), restoreWatchlist('MSFT')])
+            : await Promise.all([addToWatchlist('AAPL', 'Apple'), addToWatchlist('MSFT', 'Microsoft')]);
+        expect(results.filter((result) => 'error' in result)).toHaveLength(1);
+        if (operation === 'restore') expect(results.find((result) => 'error' in result)).toMatchObject({ code: 'WATCHLIST_CAPACITY' });
+        expect(mocks.rows.filter((item) => !item.archivedAt)).toHaveLength(50);
+    });
+
+    it('does not restore multiple persisted aliases into fewer available raw-record slots', async () => {
+        mocks.rows = [...Array.from({ length: 49 }, (_, index) => row(`ACTIVE${index}`)),
+            row('HKEX:700', { archivedAt: asOf }), row(HK_SYMBOL, { archivedAt: asOf })];
+        expect(await restoreWatchlist(HK_SYMBOL)).toMatchObject({ code: 'WATCHLIST_CAPACITY' });
+        expect(mocks.rows.filter((item) => !item.archivedAt)).toHaveLength(49);
+        expect(mocks.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('retains the token and non-sensitive intent after a partial alias write and blocks further publication', async () => {
+        mocks.rows = [row('HKEX:700', { note: 'Private thesis' }), row(HK_SYMBOL)];
+        const apply = mocks.updateMany.getMockImplementation()!;
+        mocks.updateMany.mockImplementationOnce(async (query: Query, update: Update) => {
+            await apply({ ...query, _id: 'HKEX:700' }, update);
+            throw new Error('Write failed after first alias');
+        });
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            expect(await removeFromWatchlist(HK_SYMBOL)).toMatchObject({ success: false, code: 'LIFECYCLE_MAINTENANCE', retryable: false });
+            expect(mocks.locks.get('owner')).toMatchObject({ operation: 'archive', symbol: HK_SYMBOL, lockToken: expect.any(String), maintenanceRequired: true });
+            expect(JSON.stringify(mocks.locks.get('owner'))).not.toContain('Private thesis');
+            await expect(getUserWatchlist()).rejects.toMatchObject({ code: 'LIFECYCLE_MAINTENANCE' });
+            await expect(getArchivedWatchlist()).rejects.toMatchObject({ code: 'LIFECYCLE_MAINTENANCE' });
+            expect(await restoreWatchlist(HK_SYMBOL)).toMatchObject({ code: 'LIFECYCLE_MAINTENANCE', retryable: false });
+            expect(mocks.updateMany).toHaveBeenCalledTimes(1);
+        } finally { log.mockRestore(); }
+    });
+
+    it('bounds contention without stealing an orphaned token or disguising it as an empty watchlist', async () => {
+        vi.useFakeTimers();
+        mocks.locks.set('owner', { _id: 'owner', lockToken: 'existing-holder', operation: 'archive', symbol: HK_SYMBOL });
+        const read = expect(getUserWatchlist()).rejects.toMatchObject({ code: 'LIFECYCLE_BUSY', retryable: true });
+        const restore = restoreWatchlist(HK_SYMBOL);
+        await vi.runAllTimersAsync();
+        await read;
+        expect(await restore).toMatchObject({ success: false, code: 'LIFECYCLE_BUSY', retryable: true });
+        expect(mocks.locks.get('owner')?.lockToken).toBe('existing-holder');
+        expect(mocks.find).not.toHaveBeenCalled();
+        expect(mocks.updateMany).not.toHaveBeenCalled();
+        vi.useRealTimers();
+    });
+
+    it('returns structured capacity failures without applying any batch fields and still deduplicates a saved retry', async () => {
+        const huge = savedReview({ id: 'huge-review', conclusion: 'x'.repeat(12 * 1024 * 1024), clientRequestId: 'huge' });
+        const original = savedReview();
+        mocks.rows = [row(HK_SYMBOL, { journal: [huge, original], note: 'Original thesis', nextReviewDate: '2026-11-09', journalVersion: 5 })];
+        const before = JSON.stringify(mocks.rows);
+        expect(await appendWatchlistReview(HK_SYMBOL, reviewInput({ clientRequestId: 'new', nextReviewDate: '2026-11-20' }))).toMatchObject({ success: false, code: 'JOURNAL_CAPACITY' });
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'New thesis', nextReviewDate: '2026-11-20' })).toMatchObject({ success: false, code: 'JOURNAL_CAPACITY' });
+        expect(JSON.stringify(mocks.rows)).toBe(before);
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.revalidate).not.toHaveBeenCalled();
+        mocks.quotes.mockClear();
+        expect(await appendWatchlistReview('0700.HK', reviewInput())).toMatchObject({ success: true, deduplicated: true, review: original, entries: [original] });
+        expect(mocks.quotes).not.toHaveBeenCalled();
+        expect(await updateWatchlistObservation(HK_SYMBOL, { note: 'Original thesis' })).toMatchObject({ success: true });
+        expect(mocks.update).not.toHaveBeenCalled();
     });
 });
 

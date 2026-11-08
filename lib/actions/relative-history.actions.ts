@@ -2,7 +2,13 @@
 
 import { getUnifiedChartSeries } from '@/lib/actions/realtime-market.actions';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
-import { compareRelativeHistory, relativeHistoryUnavailableReason, type RelativeHistoryComparison } from '@/lib/market/relative-history';
+import { compareRelativeHistory, getHistoricalBenchmarkOptions, relativeHistoryUnavailableReason, type RelativeHistoryComparison } from '@/lib/market/relative-history';
+import {
+    canonicalPeerMember, compareDailyResearch, compareDailyVolume, completedDailyPoints, createDailyHistoryLoader,
+    dailyPairReason, dailySupportReason, DAILY_RESEARCH_LIMIT, type DailyResearchResult, type PeerMember,
+} from '@/lib/market/daily-research';
+
+const loadDailyHistory = createDailyHistoryLoader(symbol => getUnifiedChartSeries(symbol, '3m'));
 
 /** Exactly two targeted daily-history requests, in parallel; the adapter also bounds each upstream. */
 export async function getRelativeHistoryComparison(symbol: string, benchmarkSymbol: string, currency?: string): Promise<RelativeHistoryComparison> {
@@ -25,4 +31,49 @@ export async function getRelativeHistoryComparison(symbol: string, benchmarkSymb
     } finally {
         clearTimeout(timer);
     }
+}
+
+/** Explicit user request only: at most 20 rows plus one shared benchmark, no SSR fan-out. */
+export async function getDailyResearch(input: { scope: 'watched' | 'group'; groupId?: string; benchmarkSymbol: string }): Promise<DailyResearchResult> {
+    const { requireUserId } = await import('@/lib/better-auth/auth');
+    const userId = await requireUserId();
+    if (!input || !['watched', 'group'].includes(input.scope) || typeof input.benchmarkSymbol !== 'string' || input.benchmarkSymbol.length > 25) throw new Error('比较范围无效');
+    const benchmarkSymbol = identifyMarketAndCode(input.benchmarkSymbol).normalizedSymbol;
+    const benchmarkMarket = identifyMarketAndCode(benchmarkSymbol).market;
+    const representative = benchmarkMarket === 'cn' ? '000001.SZ' : '00700.HK';
+    if (dailySupportReason(benchmarkSymbol) || !getHistoricalBenchmarkOptions(representative).some(option => option.symbol === benchmarkSymbol)) throw new Error('请选择受支持的明确基准');
+    const group = input.scope === 'group' ? await (await import('@/lib/actions/peer-groups.actions')).getPeerGroup(input.groupId ?? '') : undefined;
+    let members: PeerMember[];
+    if (group) members = group.members;
+    else {
+        const [{ Watchlist }, { withWatchlistLifecycle }] = await Promise.all([import('@/database/models/watchlist.model'), import('@/lib/watchlist-lifecycle')]);
+        const watched = await withWatchlistLifecycle(userId, { operation: 'daily-research-membership', readOnly: true }, async () =>
+            Watchlist.find({ userId, archivedAt: null }).select({ symbol: 1 }).sort({ addedAt: 1, _id: 1 }).limit(100).lean());
+        members = [...new Map(watched.flatMap(row => {
+            try { const member = canonicalPeerMember(row.symbol); return [[member.symbolId, member] as const]; }
+            catch { return []; }
+        })).values()];
+    }
+    const eligible = members.filter(member => !dailySupportReason(member.symbol) && identifyMarketAndCode(member.symbol).market === benchmarkMarket);
+    const selected = (group ? members : eligible).slice(0, DAILY_RESEARCH_LIMIT);
+    const omittedMembers = members.filter(member => !selected.some(row => row.symbolId === member.symbolId));
+    const symbols = [...new Set([...selected.filter(member => eligible.some(row => row.symbolId === member.symbolId)).map(member => member.symbol), ...(eligible.length ? [benchmarkSymbol] : [])])];
+    const histories = new Map(await Promise.all(symbols.map(async symbol => [symbol, await loadDailyHistory(symbol)] as const)));
+    const benchmark = histories.get(benchmarkSymbol) ?? null;
+    const now = new Date();
+    // Every included compatible member uses the same actual dates. Failed/mismatched members
+    // remain disclosed rows; no current sector membership is ever queried or backfilled.
+    const aligned = selected.flatMap(member => {
+        const series = histories.get(member.symbol) ?? null;
+        if (dailyPairReason(member.symbol, series, benchmarkSymbol, benchmark)) return [];
+        const points = completedDailyPoints(series!, now);
+        return points ? [points] : [];
+    });
+    const benchmarkPoints = benchmark && completedDailyPoints(benchmark, now);
+    const commonDates = benchmarkPoints && aligned.length ? [...benchmarkPoints.keys()].filter(date => aligned.every(points => points.has(date))) : [];
+    const rows = selected.map(member => {
+        const series = histories.get(member.symbol) ?? null;
+        return { ...member, comparison: compareDailyResearch(member.symbol, series, benchmarkSymbol, benchmark, now, commonDates), volume: compareDailyVolume(member.symbol, series, now) };
+    });
+    return { scope: input.scope, group, benchmarkSymbol, rows, omittedMembers, commonDates: commonDates.slice(-21), fetchedAt: now.toISOString() };
 }

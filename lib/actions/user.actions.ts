@@ -3,6 +3,7 @@
 
 import {connectToDatabase} from "@/database/mongoose";
 import { Watchlist } from "@/database/models/watchlist.model";
+import { withWatchlistLifecycle } from '@/lib/watchlist-lifecycle';
 
 export const getAllUsersForNewsEmail = async () => {
     try {
@@ -42,7 +43,8 @@ export async function getWatchlistSymbolsByEmail(email: string): Promise<string[
         const userId = (user.id as string) || String(user._id || '');
         if (!userId) return [];
 
-        const items = await Watchlist.find({ userId }, { symbol: 1 }).lean();
+        const items = await withWatchlistLifecycle(userId, { operation: 'read-news-symbols', readOnly: true },
+            () => Watchlist.find({ userId, archivedAt: null }, { symbol: 1 }).lean());
         return items.map((i) => String(i.symbol));
     } catch (err) {
         console.error('getWatchlistSymbolsByEmail error:', err);

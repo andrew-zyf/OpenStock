@@ -48,7 +48,7 @@ export function relativeHistoryUnavailableReason(symbol: string, benchmarkSymbol
     if (stock.market === 'us' || stock.market === 'tw') return '当前美股、台股历史源的复权口径未验证，暂不可比';
 }
 
-function verifiedDailyBasis(series: ChartSeries): boolean {
+export function verifiedDailyBasis(series: ChartSeries): boolean {
     const { provenance } = series;
     return series.source === 'tencent-kline' && series.interval === 'day'
         && provenance.sourceInterval === 'day' && (series.period === '1m' || series.period === '3m')

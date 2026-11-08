@@ -1,6 +1,11 @@
 import { Suspense } from 'react';
 import { Plus } from 'lucide-react';
-import { getUserWatchlist } from '@/lib/actions/watchlist.actions';
+import { getUserWatchlist, getArchivedWatchlist } from '@/lib/actions/watchlist.actions';
+import ResearchArchive from '@/components/watchlist/ResearchArchive';
+import ResearchBackup from '@/components/watchlist/ResearchBackup';
+import ResearchChanges from '@/components/watchlist/ResearchChanges';
+import DailyResearchPanel from '@/components/watchlist/DailyResearchPanel';
+import ManualPlans from '@/components/watchlist/ManualPlans';
 import { getUserAlerts } from '@/lib/actions/alert.actions';
 import { alertsEnabled } from '@/lib/market-data';
 import { getWatchlistData } from '@/lib/actions/finnhub.actions';
@@ -38,7 +43,7 @@ async function News({ items }: { items: { symbol: string; company?: string }[] }
 
 // DB reads render first; everything from Finnhub streams in behind skeletons.
 export default async function WatchlistPage() {
-    const [items, alerts] = await Promise.all([getUserWatchlist(), getUserAlerts()]);
+    const [items, alerts, archived] = await Promise.all([getUserWatchlist(), getUserAlerts(), getArchivedWatchlist()]);
     const symbols: string[] = items.map((item: { symbol: string }) => item.symbol);
     const activeAlerts = alerts.filter((a: { triggered?: boolean }) => !a.triggered).length;
 
@@ -54,14 +59,28 @@ export default async function WatchlistPage() {
                 <SearchButton className="btn btn-primary"><Plus /> 添加自选</SearchButton>
             </header>
 
+            <nav aria-label="研究任务" className="mb-3 flex flex-wrap gap-2">
+                <a className="btn min-h-12" href="#research-changes">盘前 · 变化与期限</a>
+                <a className="btn min-h-12" href="#watchlist-observations">盘中 · 数据与关键价</a>
+                <a className="btn min-h-12" href="#daily-research">盘后 · 量价与同业</a>
+                <a className="btn min-h-12" href="#manual-plans">人工计划</a>
+                <a className="btn min-h-12" href="#research-archive">归档与备份</a>
+            </nav>
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
                 <div className="flex min-w-0 flex-col gap-3">
+                    <ResearchChanges />
+                    <div id="watchlist-observations" className="min-w-0">
                     <Panel title="股票列表" sub="记录观察理由与失效条件；行情、同市场基准和相关资讯辅助复核">
                         <Suspense fallback={<RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />}>
                             <Symbols items={items} />
                         </Suspense>
                     </Panel>
+                    </div>
                     <MarketEventsCalendar items={items} />
+                    <div id="daily-research" className="min-w-0"><DailyResearchPanel watchedSymbols={items} /></div>
+                    <div id="manual-plans" className="min-w-0"><ManualPlans items={items} /></div>
+                    <ResearchArchive entries={archived} alerts={alerts} />
+                    <ResearchBackup />
                     <Panel title="自选资讯" sub="仅展示匹配关注标的的资讯，可切换全市场动态">
                         <Suspense fallback={<RowsSkeleton />}>
                             <News items={items} />

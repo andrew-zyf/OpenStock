@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { BSON } from 'mongodb';
 import { connectToDatabase } from '@/database/mongoose';
 import { Watchlist } from '@/database/models/watchlist.model';
+import { withWatchlistLifecycle, WatchlistLifecycleError, type LifecycleFailure } from '@/lib/watchlist-lifecycle';
 import { revalidatePath } from 'next/cache';
 import { requireUserId } from '@/lib/better-auth/auth';
 import { getSymbolAliases } from '@/lib/utils';
@@ -14,7 +15,7 @@ import {
     type ObservationInput, type SavedWatchlistRecord, type WatchlistEntry,
 } from '@/lib/watchlist-observation';
 import {
-    journalTime, observationState, reviewRequest, validateReviewInput,
+    compareJournalEntries, journalTime, observationState, reviewRequest, validateReviewInput,
     type ObservationRevision, type ObservationState, type WatchlistJournalEntry,
     type WatchlistJournalPage, type WatchlistReview, type WatchlistReviewInput,
 } from '@/lib/watchlist-review';
@@ -23,6 +24,17 @@ import {
 // untrusted input, and every symbol here becomes Finnhub calls on /watchlist and in the news digest.
 const SYMBOL_PATTERN = /^[A-Z0-9][A-Z0-9.&:-]{0,24}$/;
 const MAX_WATCHLIST = 50;
+const watchlistCapacity = { success: false, code: 'WATCHLIST_CAPACITY', error: `自选列表已满（上限 ${MAX_WATCHLIST} 只股票），请归档部分后再添加。` } as const;
+const archivedFailure = { success: false, code: 'ARCHIVED', error: '研究记录已归档，请先恢复到自选后再编辑' } as const;
+
+async function lifecycleWrite<T>(userId: string, operation: string, symbol: string, write: () => Promise<T>): Promise<T | LifecycleFailure> {
+    try {
+        return await withWatchlistLifecycle(userId, { operation, symbol: identifyMarketAndCode(symbol).normalizedSymbol }, write);
+    } catch (error) {
+        if (error instanceof WatchlistLifecycleError) return error.failure();
+        throw error;
+    }
+}
 
 // -- CRUD Operations --
 
@@ -33,63 +45,68 @@ export async function addToWatchlist(symbol: string, company: string) {
     const ticker = identifyMarketAndCode(input).normalizedSymbol;
     const name = String(company ?? '').trim().slice(0, 120);
     try {
-        await connectToDatabase();
+        return await withWatchlistLifecycle(userId, { operation: 'add', symbol: ticker }, async () => {
+            const aliases = { userId, symbol: { $in: getSymbolAliases(input) } };
+            const existing = await Watchlist.findOne(aliases);
+            if (existing) {
+                const restored = await restoreRecords(userId, input);
+                return restored.success ? restored.entry : { error: restored.error };
+            }
+            if ((await Watchlist.countDocuments({ userId, archivedAt: null })) >= MAX_WATCHLIST) {
+                return { error: watchlistCapacity.error };
+            }
 
-        const aliases = { userId, symbol: { $in: getSymbolAliases(input) } };
-        const existing = await Watchlist.findOne(aliases);
-        if (existing) {
-            const records = await Watchlist.find(aliases).sort({ addedAt: -1 });
-            return mergeWatchlistRecords(JSON.parse(JSON.stringify(records)))[0];
-        }
+            // Optional quote availability never prevents saving research or creates a backfill.
+            let initialSnapshot;
+            try {
+                initialSnapshot = snapshotFromQuote((await fetchRealtimeQuotes([ticker]))[ticker]);
+            } catch { /* Leave the initial snapshot absent when the provider is unavailable. */ }
 
-        if ((await Watchlist.countDocuments({ userId })) >= MAX_WATCHLIST) {
-            return { error: `自选列表已满（上限 ${MAX_WATCHLIST} 只股票），请移除部分后再添加。` };
-        }
-
-        // Quote availability must never prevent saving an observation. This adapter does not
-        // import Finnhub actions, and explicitly rejects Taiwan's previous-close fallback.
-        let initialSnapshot;
-        try {
-            initialSnapshot = snapshotFromQuote((await fetchRealtimeQuotes([ticker]))[ticker]);
-        } catch {
-            // Optional provider unavailable: leave the snapshot absent, including on later reads.
-        }
-
-        // Keep saved metadata, snapshot and addedAt intact if another request inserted it.
-        let newItem;
-        try {
-            newItem = await Watchlist.findOneAndUpdate(
-                { userId, symbol: ticker },
-                { $setOnInsert: {
-                    userId, symbol: ticker, company: name, addedAt: new Date(),
-                    ...(initialSnapshot ? { initialSnapshot } : {}),
-                } },
-                { upsert: true, new: true }
-            );
-        } catch (error) {
-            if ((error as { code?: number }).code !== 11000) throw error;
-            // A concurrent upsert can lose the unique-index race. Reuse its saved record.
-            newItem = await Watchlist.findOne(aliases);
-            if (!newItem) throw error;
-        }
-
-        revalidatePath('/', 'layout'); // sidebar lists the watchlist on every page
-        return mergeWatchlistRecords([JSON.parse(JSON.stringify(newItem))])[0];
+            let newItem;
+            try {
+                newItem = await Watchlist.findOneAndUpdate(
+                    { userId, symbol: ticker },
+                    { $setOnInsert: {
+                        userId, symbol: ticker, company: name, addedAt: new Date(),
+                        ...(initialSnapshot ? { initialSnapshot } : {}),
+                    } },
+                    { upsert: true, new: true }
+                );
+            } catch (error) {
+                if ((error as { code?: number }).code !== 11000) throw error;
+                newItem = await Watchlist.findOne(aliases);
+                if (!newItem) throw error;
+            }
+            if (newItem?.archivedAt) {
+                const restored = await restoreRecords(userId, input);
+                return restored.success ? restored.entry : { error: restored.error };
+            }
+            revalidatePath('/', 'layout');
+            return mergeWatchlistRecords([JSON.parse(JSON.stringify(newItem))])[0];
+        });
     } catch (error) {
         console.error('Error adding to watchlist:', error);
+        if (error instanceof WatchlistLifecycleError) return error.failure();
         throw new Error('添加自选失败');
     }
 }
 
 export async function removeFromWatchlist(symbol: string) {
     const userId = await requireUserId();
+    const ticker = checkedSymbol(symbol);
     try {
-        await connectToDatabase();
-        await Watchlist.deleteMany({ userId, symbol: { $in: getSymbolAliases(symbol) } });
+        // The shared user mutex serializes all aliases with restores, adds and ordinary reads.
+        // Advancing the CAS token also rejects a journal write which read before this archive.
+        await withWatchlistLifecycle(userId, { operation: 'archive', symbol: ticker }, async () => {
+            await Watchlist.updateMany({ userId, symbol: { $in: getSymbolAliases(ticker) }, archivedAt: null }, {
+                $set: { archivedAt: new Date() }, $inc: { journalVersion: 1 },
+            });
+        });
         revalidatePath('/', 'layout'); // sidebar lists the watchlist on every page
         return { success: true };
     } catch (error) {
         console.error('Error removing from watchlist:', error);
+        if (error instanceof WatchlistLifecycleError) return error.failure();
         throw new Error('移出自选失败');
     }
 }
@@ -97,12 +114,60 @@ export async function removeFromWatchlist(symbol: string) {
 export async function getUserWatchlist(): Promise<WatchlistEntry[]> {
     const userId = await requireUserId();
     try {
-        await connectToDatabase();
-        const watchlist = await Watchlist.find({ userId }).sort({ addedAt: -1 });
-        return mergeWatchlistRecords(JSON.parse(JSON.stringify(watchlist)));
+        return await withWatchlistLifecycle(userId, { operation: 'read-active', readOnly: true }, async () => {
+            const watchlist = await Watchlist.find({ userId, archivedAt: null }).sort({ addedAt: -1 });
+            return mergeWatchlistRecords(JSON.parse(JSON.stringify(watchlist)));
+        });
     } catch (error) {
+        if (error instanceof WatchlistLifecycleError) throw error;
         console.error('Error fetching watchlist:', error);
         return [];
+    }
+}
+
+export async function getArchivedWatchlist(): Promise<WatchlistEntry[]> {
+    const userId = await requireUserId();
+    try {
+        return await withWatchlistLifecycle(userId, { operation: 'read-archived', readOnly: true }, async () => {
+            const records = await Watchlist.find({ userId, archivedAt: { $ne: null } }).sort({ addedAt: -1 });
+            return mergeWatchlistRecords(JSON.parse(JSON.stringify(records)));
+        });
+    } catch (error) {
+        if (error instanceof WatchlistLifecycleError) throw error;
+        console.error('Error fetching archived watchlist:', error);
+        return [];
+    }
+}
+
+type RestoreResult = { success: true; entry: WatchlistEntry }
+    | { success: false; code: 'NOT_FOUND' | 'WATCHLIST_CAPACITY'; error: string } | LifecycleFailure;
+
+async function restoreRecords(userId: string, ticker: string): Promise<RestoreResult> {
+    const scope = { userId, symbol: { $in: getSymbolAliases(ticker) } };
+    const records: SavedWatchlistRecord[] = JSON.parse(JSON.stringify(await Watchlist.find(scope).sort({ addedAt: -1 })));
+    if (!records.length) return { success: false, code: 'NOT_FOUND', error: '未找到研究记录' };
+    const archivedCount = records.filter((record) => record.archivedAt).length;
+    if (archivedCount) {
+        if ((await Watchlist.countDocuments({ userId, archivedAt: null })) + archivedCount > MAX_WATCHLIST) return watchlistCapacity;
+        await Watchlist.updateMany({ ...scope, archivedAt: { $ne: null } }, {
+            $set: { archivedAt: null }, $inc: { journalVersion: 1 },
+        });
+        const restored = await Watchlist.find(scope).sort({ addedAt: -1 });
+        revalidatePath('/', 'layout');
+        return { success: true, entry: mergeWatchlistRecords(JSON.parse(JSON.stringify(restored)))[0] };
+    }
+    return { success: true, entry: mergeWatchlistRecords(records)[0] };
+}
+
+/** Restoring keeps the saved identity, addedAt, snapshot and entire journal intact. */
+export async function restoreWatchlist(symbol: string): Promise<RestoreResult> {
+    const userId = await requireUserId();
+    const ticker = checkedSymbol(symbol);
+    try {
+        return await withWatchlistLifecycle(userId, { operation: 'restore', symbol: identifyMarketAndCode(ticker).normalizedSymbol }, () => restoreRecords(userId, ticker));
+    } catch (error) {
+        if (error instanceof WatchlistLifecycleError) return error.failure();
+        throw error;
     }
 }
 
@@ -119,7 +184,7 @@ async function journalRecords(userId: string, ticker: string): Promise<SavedWatc
 
 function journalCAS(userId: string, owner: SavedWatchlistRecord) {
     return {
-        _id: owner._id, userId, symbol: owner.symbol,
+        _id: owner._id, userId, symbol: owner.symbol, archivedAt: null,
         observationUpdatedAt: owner.observationUpdatedAt ? new Date(owner.observationUpdatedAt) : null,
         journalVersion: owner.journalVersion ?? null,
     };
@@ -133,7 +198,7 @@ function entryAfterSave(records: SavedWatchlistRecord[], updated: unknown): Watc
 /** Stay below MongoDB's 16 MiB document ceiling without ever truncating history. */
 function checkJournalCapacity(owner: SavedWatchlistRecord, additions: WatchlistJournalEntry[], set: object) {
     if (BSON.calculateObjectSize({ ...owner, ...set, journal: [...(owner.journal || []), ...additions] }) > 12 * 1024 * 1024) {
-        throw new Error('观察历史已达到单条记录容量限制，本次未保存；请先导出并联系管理员扩容，已有历史不会被截断');
+        return { success: false, code: 'JOURNAL_CAPACITY', error: '观察历史已达到单条记录容量限制，本次未保存；请先导出并联系管理员扩容，已有历史不会被截断' } as const;
     }
 }
 
@@ -168,8 +233,10 @@ function observationChange(records: SavedWatchlistRecord[], owner: SavedWatchlis
             sourceSymbol: record.symbol, observation: observationState(mergeWatchlistRecords([record])[0]),
         });
     }
-    // Preserve the effective merged state too when it is distinct from every raw/captured state.
-    if (![...archived, ...revisions].some((item) => JSON.stringify(observationState(item.observation)) === JSON.stringify(previous))) {
+    // Keep the effective before-state adjacent to the edit. A matching older alias capture
+    // elsewhere in history does not describe the transition after a different raw alias state.
+    const preceding = revisions.at(-1) ?? [...archived].sort(compareJournalEntries)[0];
+    if (!preceding || JSON.stringify(observationState(preceding.observation)) !== JSON.stringify(previous)) {
         appendRevision({ modifiedAt: entry.observationUpdatedAt ?? null,
             source: entry.observationUpdatedAt ? 'saved-revision' : 'legacy-capture', observation: previous });
     }
@@ -191,7 +258,7 @@ export async function updateWatchlistObservation(
     symbol: string,
     input: ObservationInput,
     expectedUpdatedAt?: string | null,
-): Promise<{ success: true; entry: WatchlistEntry } | { success: false; code: 'CONFLICT' | 'NOT_FOUND'; error: string }> {
+): Promise<{ success: true; entry: WatchlistEntry } | { success: false; code: 'CONFLICT' | 'NOT_FOUND' | 'ARCHIVED' | 'JOURNAL_CAPACITY'; error: string } | LifecycleFailure> {
     const userId = await requireUserId();
     const ticker = checkedSymbol(symbol);
     const patch = validateObservationInput(input);
@@ -199,16 +266,18 @@ export async function updateWatchlistObservation(
         && (typeof expectedUpdatedAt !== 'string' || !Number.isFinite(Date.parse(expectedUpdatedAt))
             || new Date(expectedUpdatedAt).toISOString() !== expectedUpdatedAt)) throw new Error('无效的观察版本');
 
-    await connectToDatabase();
+    return lifecycleWrite<Awaited<ReturnType<typeof updateWatchlistObservation>>>(userId, 'observation', ticker, async () => {
     const records = await journalRecords(userId, ticker);
     if (!records.length) return { success: false, code: 'NOT_FOUND', error: '未找到自选记录' };
     const entry = mergeWatchlistRecords(records)[0];
+    if (entry.archivedAt) return archivedFailure;
     const conflict = { success: false, code: 'CONFLICT', error: '观察记录已更新，请刷新后重试' } as const;
     if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== (entry.observationUpdatedAt ?? null)) return conflict;
     const owner = observationOwner(records);
     const change = observationChange(records, owner, entry, patch, new Date(Date.now()).toISOString());
     if (!change) return { success: true, entry };
-    checkJournalCapacity(owner, change.revisions, change.set);
+    const capacityFailure = checkJournalCapacity(owner, change.revisions, change.set);
+    if (capacityFailure) return capacityFailure;
     const updated = await Watchlist.findOneAndUpdate(journalCAS(userId, owner), {
         $set: change.set, $push: { journal: { $each: change.revisions } }, $inc: { journalVersion: 1 },
     }, { new: true });
@@ -216,6 +285,7 @@ export async function updateWatchlistObservation(
     const result = entryAfterSave(records, updated);
     revalidatePath('/', 'layout');
     return { success: true, entry: result };
+    });
 }
 
 export async function getWatchlistJournal(
@@ -271,11 +341,11 @@ export async function appendWatchlistReview(
     symbol: string,
     input: WatchlistReviewInput,
 ): Promise<{ success: true; review: WatchlistReview; deduplicated: boolean; entry: WatchlistEntry; entries: WatchlistJournalEntry[] }
-    | { success: false; code: 'CONFLICT' | 'NOT_FOUND' | 'INVALID_CORRECTION'; error: string }> {
+    | { success: false; code: 'CONFLICT' | 'NOT_FOUND' | 'INVALID_CORRECTION' | 'ARCHIVED' | 'JOURNAL_CAPACITY'; error: string } | LifecycleFailure> {
     const userId = await requireUserId();
     const ticker = checkedSymbol(symbol);
     const request = validateReviewInput(input);
-    await connectToDatabase();
+    return lifecycleWrite<Awaited<ReturnType<typeof appendWatchlistReview>>>(userId, 'review', ticker, async () => {
     const records = await journalRecords(userId, ticker);
     if (!records.length) return { success: false, code: 'NOT_FOUND', error: '未找到自选记录' };
     const conflict = { success: false, code: 'CONFLICT', error: '复核记录已变化或请求标识已被使用，请刷新后使用原请求重试' } as const;
@@ -287,6 +357,8 @@ export async function appendWatchlistReview(
         return { success: false, code: 'INVALID_CORRECTION', error: '更正引用必须属于当前用户的这只股票的已有复核条目' };
     }
     const entry = mergeWatchlistRecords(records)[0];
+    // Exact request retries above remain readable after archive; all new writes require restore.
+    if (entry.archivedAt) return archivedFailure;
     const owner = observationOwner(records);
     let sourceQuote;
     try {
@@ -300,7 +372,8 @@ export async function appendWatchlistReview(
     const change = request.nextReviewDate !== undefined
         ? observationChange(records, owner, entry, { nextReviewDate: request.nextReviewDate }, now) : undefined;
     const additions: WatchlistJournalEntry[] = [...(change?.revisions.map((revision) => ({ ...revision, reviewId: review.id })) || []), review];
-    checkJournalCapacity(owner, additions, change?.set || {});
+    const capacityFailure = checkJournalCapacity(owner, additions, change?.set || {});
+    if (capacityFailure) return capacityFailure;
     const updated = await Watchlist.findOneAndUpdate(journalCAS(userId, owner), {
         ...(change ? { $set: change.set } : {}),
         $push: { journal: { $each: additions } }, $inc: { journalVersion: 1 },
@@ -317,16 +390,19 @@ export async function appendWatchlistReview(
     }
     revalidatePath('/', 'layout');
     return { success: true, review, deduplicated: false, entry: entryAfterSave(records, updated), entries: additions };
+    });
 }
 
 // Check if a symbol is in the user's watchlist
 export async function isStockInWatchlist(symbol: string) {
     const userId = await requireUserId();
     try {
-        await connectToDatabase();
-        const item = await Watchlist.findOne({ userId, symbol: { $in: getSymbolAliases(symbol) } });
-        return !!item;
+        return await withWatchlistLifecycle(userId, { operation: 'read-membership', readOnly: true }, async () => {
+            const item = await Watchlist.findOne({ userId, symbol: { $in: getSymbolAliases(symbol) }, archivedAt: null });
+            return !!item;
+        });
     } catch (error) {
+        if (error instanceof WatchlistLifecycleError) throw error;
         console.error('Error checking watchlist status:', error);
         return false;
     }

@@ -6,7 +6,8 @@ import { requireUserId } from '@/lib/better-auth/auth';
 import { getUserWatchlist } from '@/lib/actions/watchlist.actions';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
 import { addCalendarDays, exchangeDateForSymbol } from '@/lib/market/dates';
-import { parseCnDisclosureEvents, parseTwseEvents, validateEventInput, type EventInput, type MarketEvent, type EventCalendarData } from '@/lib/market/events';
+import { eventInUpcomingWeek, parseCnDisclosureEvents, parseTwseEvents, validateEventInput, type EventInput, type MarketEvent, type EventCalendarData } from '@/lib/market/events';
+import { observeAutomaticEvents } from '@/lib/market/research-changes';
 
 const TW_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/TWT48U_ALL';
 const MANUAL_LIMIT = 100;
@@ -36,6 +37,7 @@ export async function getWatchlistEvents(): Promise<EventCalendarData> {
     const cn = symbols.filter((symbol) => { const meta = identifyMarketAndCode(symbol); return meta.market === 'cn' && meta.kind === 'equity' && meta.exchangeId !== 'BSE'; });
     const now = new Date();
     const data: EventCalendarData = { events: rows.map(userEvent), sources: [], fetchedAt: now.toISOString(), manualLimit: MANUAL_LIMIT };
+    const observed: MarketEvent[] = [];
     await Promise.all([
         (async () => {
             if (!tw.length) return;
@@ -43,7 +45,7 @@ export async function getWatchlistEvents(): Promise<EventCalendarData> {
                 const value = await sourceJson(TW_URL);
                 if (!Array.isArray(value)) throw new Error('来源格式改变');
                 data.events.push(...parseTwseEvents(value, tw, now));
-                data.sources.push({ source: 'TWSE 除权息预告', status: 'ready', detail: `筛选 ${tw.length} 只上市自选的未来 7 个自然日；官方预告可能变更。` });
+                data.sources.push({ source: 'TWSE 除权息预告', status: 'ready', detail: `筛选 ${tw.length} 只上市自选的未来 7 个自然日；官方预告可能变更。当前来源无经验证的稳定事件标识，不能据此关联改期或撤回。` });
             } catch { data.sources.push({ source: 'TWSE 除权息预告', status: 'error', detail: '来源暂不可用，不能据此判断未来一周没有事件。' }); }
         })(),
         (async () => {
@@ -51,18 +53,25 @@ export async function getWatchlistEvents(): Promise<EventCalendarData> {
             const start = exchangeDateForSymbol(cn[0], now);
             const codes = cn.map((symbol) => `"${symbol.split('.')[0]}"`).join(',');
             const query = new URLSearchParams({ reportName: 'RPT_PUBLIC_BS_APPOIN', columns: 'SECURITY_CODE,SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE_NAME,APPOINT_PUBLISH_DATE,IS_PUBLISH',
-                filter: `(SECURITY_CODE in (${codes}))(APPOINT_PUBLISH_DATE>='${start}')(APPOINT_PUBLISH_DATE<='${addCalendarDays(start, 6)}')`,
-                pageNumber: '1', pageSize: '100', sortColumns: 'APPOINT_PUBLISH_DATE', sortTypes: '1' });
+                // Fetch beyond the display window so a real move outside this week remains observable.
+                filter: `(SECURITY_CODE in (${codes}))(APPOINT_PUBLISH_DATE>='${addCalendarDays(start, -366)}')(APPOINT_PUBLISH_DATE<='${addCalendarDays(start, 366)}')`,
+                pageNumber: '1', pageSize: '1000', sortColumns: 'APPOINT_PUBLISH_DATE', sortTypes: '1' });
             try {
                 const value = await sourceJson(`https://datacenter-web.eastmoney.com/api/data/v1/get?${query}`) as { success?: boolean; code?: number; result?: { data?: unknown; count?: number } } | null;
                 // The source's documented empty payload was also verified against a live empty window.
                 const empty = value?.code === 9201 && value.result === null;
                 if (!empty && (!value?.success || !Array.isArray(value.result?.data))) throw new Error('来源格式改变');
-                data.events.push(...parseCnDisclosureEvents(empty ? [] : value!.result!.data, cn, now));
-                data.sources.push({ source: 'A股预约披露', status: 'ready', detail: `筛选 ${cn.length} 只沪深自选；来源预约日期，不等于实际披露。${(value?.result?.count ?? 0) > 100 ? '结果超过 100 条，仅显示首批。' : ''}` });
+                const versions = parseCnDisclosureEvents(empty ? [] : value!.result!.data, cn, now, false);
+                observed.push(...versions);
+                data.events.push(...versions.filter((event) => eventInUpcomingWeek(event, now)));
+                data.sources.push({ source: 'A股预约披露', status: 'ready', detail: `筛选 ${cn.length} 只沪深自选；来源预约日期，不等于实际披露。为观察移出本周的改期，同时读取前后 366 日预约。${(value?.result?.count ?? 0) > 1000 ? '结果超过 1000 条，仅观察首批，可能遗漏变化。' : ''}` });
             } catch { data.sources.push({ source: 'A股预约披露', status: 'error', detail: '来源暂不可用，不能据此判断未来一周没有披露。' }); }
         })(),
     ]);
+    if (observed.length) {
+        try { await observeAutomaticEvents(userId, observed, now); }
+        catch { data.sources.push({ source: '事件变化留存', status: 'error', detail: '本次来源记录已展示，但版本保存失败，不能判断是否没有新增变化；请稍后刷新。' }); }
+    }
     if (symbols.some((symbol) => !tw.includes(symbol) && !cn.includes(symbol))) data.sources.push({ source: '其他市场或证券类型', status: 'unsupported', detail: '尚未接入经验证的自动事件来源，可手工记录；不以新闻标题生成确定日期。' });
     data.events = [...new Map(data.events.filter((event) => event.certainty === 'user' || symbols.includes(event.symbol)).map((event) => [event.id, event])).values()].sort((a, b) => a.date.localeCompare(b.date) || a.symbol.localeCompare(b.symbol));
     data.sources.sort((a, b) => a.source.localeCompare(b.source));

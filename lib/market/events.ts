@@ -6,6 +6,8 @@ export type MarketEvent = {
     kind: 'earnings' | 'ex-dividend' | 'other';
     certainty: 'official-schedule' | 'estimated' | 'user';
     source: string; sourceUrl?: string; note?: string; createdAt?: string;
+    /** Stable source identity; absent when the upstream only identifies a dated occurrence. */
+    versionIdentity?: string;
 };
 export type EventInput = { symbol: string; title: string; date: string; kind: MarketEvent['kind']; sourceUrl?: string; note?: string; clientRequestId: string };
 export type EventSourceStatus = { source: string; status: 'ready' | 'error' | 'unsupported'; detail: string };
@@ -53,15 +55,17 @@ export function parseTwseEvents(value: unknown, symbols: string[], now: Date): M
     });
 }
 
-export function parseCnDisclosureEvents(value: unknown, symbols: string[], now: Date): MarketEvent[] {
+export function parseCnDisclosureEvents(value: unknown, symbols: string[], now: Date, upcomingOnly = true): MarketEvent[] {
     const wanted = new Set(symbols.map((symbol) => identifyMarketAndCode(symbol).normalizedSymbol));
     return rowObjects(value).flatMap((row): MarketEvent[] => {
         const rawSymbol = String(row.SECUCODE ?? '');
         const meta = identifyMarketAndCode(rawSymbol);
         if (meta.market !== 'cn' || !wanted.has(meta.normalizedSymbol) || String(row.IS_PUBLISH) === '1') return [];
         const date = typeof row.APPOINT_PUBLISH_DATE === 'string' ? row.APPOINT_PUBLISH_DATE.slice(0, 10) : '';
-        if (!eventInUpcomingWeek({ symbol: meta.normalizedSymbol, date }, now)) return [];
-        return [{ id: `em:${meta.normalizedSymbol}:${String(row.REPORT_DATE)}:${date}`, symbol: meta.normalizedSymbol, date,
+        const reportPeriod = typeof row.REPORT_DATE === 'string' ? row.REPORT_DATE.slice(0, 10) : '';
+        if (!validCalendarDate(reportPeriod) || !validCalendarDate(date) || (upcomingOnly && !eventInUpcomingWeek({ symbol: meta.normalizedSymbol, date }, now))) return [];
+        const versionIdentity = `em:${meta.normalizedSymbol}:${reportPeriod}:earnings`;
+        return [{ id: versionIdentity, versionIdentity, symbol: meta.normalizedSymbol, date,
             title: `${String(row.SECURITY_NAME_ABBR || meta.normalizedSymbol)} ${String(row.REPORT_TYPE_NAME || '定期报告')}预约披露`,
             kind: 'earnings', certainty: 'estimated', source: '东方财富预约披露表',
             sourceUrl: 'https://data.eastmoney.com/bbsj/yypl.html', note: '来源预约日期，尚未视为实际披露，可能调整。' }];

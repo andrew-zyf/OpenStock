@@ -1,0 +1,94 @@
+'use client';
+
+import { useId, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { exportResearchBackupForUI, importResearchBackupForUI, previewResearchBackupImportForUI } from '@/lib/actions/research-backup.actions';
+import type { ResearchImportPreview } from '@/lib/research-backup';
+
+const MAX_BYTES = 32 * 1024 * 1024;
+const buttonClass = 'btn min-h-12 disabled:opacity-50';
+export default function ResearchBackup() {
+    const id = useId();
+    const router = useRouter();
+    const pending = useRef(false);
+    const [busy, setBusy] = useState(false);
+    const [preview, setPreview] = useState<ResearchImportPreview | null>(null);
+    const [json, setJson] = useState('');
+    const [error, setError] = useState('');
+    const [message, setMessage] = useState('');
+    const fail = () => setError('研究备份请求未完成，请确认文件可读、登录有效后重试。');
+
+    async function download() {
+        if (pending.current) return;
+        pending.current = true;
+        setBusy(true); setError(''); setMessage('');
+        try {
+            const response = await exportResearchBackupForUI();
+            if (!response.success) { setError(response.error); return; }
+            const url = URL.createObjectURL(new Blob([response.data], { type: 'application/json;charset=utf-8' }));
+            const link = document.createElement('a');
+            link.href = url; link.download = `openstock-research-v1-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link); link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setMessage('完整研究 JSON 已下载，请妥善保存其中的私人笔记。');
+        } catch { fail(); }
+        finally { pending.current = false; setBusy(false); }
+    }
+    async function inspect(data: FormData) {
+        if (pending.current) return;
+        pending.current = true;
+        setBusy(true); setError(''); setMessage(''); setPreview(null); setJson('');
+        try {
+            const file = data.get('backup');
+            if (!(file instanceof File) || !file.size) { setError('请选择 JSON 备份文件'); return; }
+            if (file.size > MAX_BYTES) { setError('备份文件须小于 32 MiB'); return; }
+            const text = await file.text();
+            const response = await previewResearchBackupImportForUI(text);
+            if (!response.success) { setError(response.error); return; }
+            setJson(text); setPreview(response.data);
+        } catch { fail(); }
+        finally { pending.current = false; setBusy(false); }
+    }
+    async function restore(data: FormData) {
+        if (pending.current || !preview || data.get('confirm') !== 'yes') return;
+        pending.current = true;
+        setBusy(true); setError(''); setMessage('');
+        try {
+            const response = await importResearchBackupForUI(json, preview.digest);
+            if (!response.success) { setError(response.error); return; }
+            const result = response.data;
+            const research = result.research.filter((item) => item.status === 'import').length;
+            const events = result.manualEvents.filter((item) => item.status === 'import').length;
+            const skipped = result.research.length + result.manualEvents.length - research - events;
+            setMessage(`导入完成：${research} 个归档标的、${events} 条手动事件；跳过 ${skipped} 项。已按导入时的账户状态重新检查冲突。提醒仅保留在下载文件中。`);
+            setPreview(null); setJson(''); router.refresh();
+        } catch { fail(); }
+        finally { pending.current = false; setBusy(false); }
+    }
+    const conflicts = preview?.research.filter((item) => item.status !== 'import') || [];
+    const eventSkips = preview?.manualEvents.filter((item) => item.status !== 'import') || [];
+    return <section id="research-backup" aria-labelledby={`${id}-title`} className="rounded-xl border border-line bg-surface p-4 text-foreground sm:p-5">
+        <h2 id={`${id}-title`} className="text-lg font-semibold text-foreground">研究备份与导入</h2>
+        <p id={`${id}-help`} className="mt-2 text-sm leading-6 text-faint">JSON v1 包含全部活跃及归档研究、原始别名、完整观察与更正历史、初始快照，以及含撤销记录的手动事件。提醒触发和通知状态仅供参考，导入不会重建提醒、发送通知或运行任务。</p>
+        <p className="mt-1 text-sm text-faint">仅导入当前账户缺少的标的并默认归档；已有标的与事件跳过，不覆盖。此版本不包含研究计划、对照标的或变更版本等其他资料。</p>
+        <p className="mt-1 text-sm text-faint">文件上限 32 MiB；超过容量或含无法安全恢复的旧数据时，导出会报错并保留原记录，不截断历史。导入需要支持事务的 MongoDB 副本集，单机模式只可导出和预览。</p>
+        <button type="button" className={`${buttonClass} mt-4`} disabled={busy} onClick={download}>下载完整 JSON</button>
+        <form action={inspect} className="mt-5">
+            <fieldset disabled={busy} className="space-y-3">
+                <legend className="mb-2 text-sm font-medium text-foreground">选择文件并在服务器校验</legend>
+                <label htmlFor={`${id}-file`} className="block text-sm text-foreground">JSON 备份文件（必填，最多 32 MiB）</label>
+                <input id={`${id}-file`} name="backup" type="file" accept=".json,application/json" required aria-describedby={`${id}-help`} className="block min-h-12 w-full max-w-full rounded-lg border border-line p-2 text-base text-foreground file:mr-3 file:rounded file:border-0 file:bg-background file:px-3 file:py-2 file:text-foreground" onChange={() => { setPreview(null); setJson(''); setError(''); setMessage(''); }} />
+                <button type="submit" className={buttonClass}>{busy ? '处理中…' : '校验并预览'}</button>
+            </fieldset>
+        </form>
+        {preview && <form action={restore} className="mt-5 space-y-3 border-t border-line pt-4">
+            <p className="text-sm text-foreground">可导入 {preview.research.filter((item) => item.status === 'import').length} 个标的、{preview.manualEvents.filter((item) => item.status === 'import').length} 条手动事件；{preview.referenceAlerts} 条提醒参考不会导入。</p>
+            {conflicts.length > 0 && <div className="text-sm text-faint"><p>以下 {conflicts.length} 个标的已存在（含归档及别名），整组跳过：</p><ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{conflicts.slice(0, 50).map((item) => <li key={item.symbol}>{item.symbol}（{item.records} 份原始记录）</li>)}</ul>{conflicts.length > 50 && <p>另有 {conflicts.length - 50} 个冲突标的。</p>}</div>}
+            {eventSkips.length > 0 && <div className="text-sm text-faint"><p>跳过 {eventSkips.length} 条手动事件：</p><ul className="list-inside list-disc">{eventSkips.slice(0, 20).map((item) => <li key={item.id}>{item.title}：{item.status === 'skip-capacity' ? '有效事件上限 100 条' : '已有记录或撤销记录'}</li>)}</ul>{eventSkips.length > 20 && <p>另有 {eventSkips.length - 20} 条。</p>}</div>}
+            <label className="flex min-h-12 items-start gap-3 text-sm leading-6 text-foreground"><input name="confirm" type="checkbox" value="yes" required disabled={busy} className="mt-1 size-4 shrink-0 accent-yellow-400" />我确认将缺少的研究导入当前账户并归档，已有记录跳过；手动事件保留原撤销状态，提醒不导入。</label>
+            <button type="submit" disabled={busy} className={buttonClass}>{busy ? '正在导入…' : '确认导入缺少的记录'}</button>
+        </form>}
+        <p aria-live="polite" role="status" className="mt-3 text-sm leading-6 text-foreground">{message}</p>
+        {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
+    </section>;
+}

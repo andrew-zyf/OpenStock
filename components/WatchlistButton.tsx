@@ -34,8 +34,11 @@ const WatchlistButton = ({ symbol, company, isInWatchlist, variant = "button", o
                     toast.error(result.error);
                     return;
                 }
-            } else await removeFromWatchlist(symbol);
-            toast.success(next ? `已将 ${symbol} 添加至自选` : `已将 ${symbol} 移出自选`);
+            } else {
+                const result = await removeFromWatchlist(symbol);
+                if ('error' in result) { setAdded(true); toast.error(String(result.error)); return; }
+            }
+            toast.success(next ? `已将 ${symbol} 添加至自选，已有研究会恢复` : `已归档 ${symbol}，研究历史保留；关联预警继续独立运行，可在研究归档中停用`);
             onWatchlistChange?.(symbol, next);
             router.refresh(); // sidebar lists the watchlist from the layout
         } catch (error) {
@@ -47,7 +50,7 @@ const WatchlistButton = ({ symbol, company, isInWatchlist, variant = "button", o
         }
     };
 
-    const label = added ? `将 ${symbol} 移出自选` : `添加 ${symbol} 到自选`;
+    const label = added ? `将 ${symbol} 移出自选并归档研究` : `添加 ${symbol} 到自选`;
 
     if (variant === "icon") {
         return (

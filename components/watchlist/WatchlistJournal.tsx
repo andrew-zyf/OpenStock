@@ -43,7 +43,7 @@ export function mergeJournalEntries(current: WatchlistJournalEntry[], incoming: 
     return [...entries.values()].sort((a, b) => (b.kind === 'review' ? b.createdAt : b.recordedAt).localeCompare(a.kind === 'review' ? a.createdAt : a.recordedAt) || b.id.localeCompare(a.id));
 }
 
-export function JournalRecord({ entry, onCorrect }: { entry: WatchlistJournalEntry; onCorrect: (review: WatchlistReview) => void }) {
+export function JournalRecord({ entry, onCorrect }: { entry: WatchlistJournalEntry; onCorrect?: (review: WatchlistReview) => void }) {
     if (entry.kind === 'observation') return <article className="min-w-0 space-y-2 rounded-md border border-line p-3 text-sm">
         <h4 className="font-medium">历史观点 · {entry.source === 'legacy-capture' ? '旧记录留存' : '观察版本'}</h4>
         <p className="text-xs text-faint">修改时间：{entry.modifiedAt ? observationTime(entry.modifiedAt) : '未知（不以加入时间代替）'} · 留存：{observationTime(entry.recordedAt)}</p>
@@ -65,7 +65,7 @@ export function JournalRecord({ entry, onCorrect }: { entry: WatchlistJournalEnt
             const href = safeEvidenceURL(value);
             return <li key={`${value}-${index}`} className="break-all">{href ? <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="underline">{href}</a> : <span>{value}（无效链接）</span>}</li>;
         })}</ul>}
-        <button type="button" className="btn min-h-12 text-xs" onClick={() => onCorrect(entry)}>追加更正（保留原文）</button>
+        {onCorrect && <button type="button" className="btn min-h-12 text-xs" onClick={() => onCorrect(entry)}>追加更正（保留原文）</button>}
     </article>;
 }
 
@@ -142,7 +142,13 @@ export default function WatchlistJournal({ entry, onSaved, onClose }: { entry: W
         saving.current = true; setPending(true); setMessage('');
         try {
             const result = await appendWatchlistReview(entry.symbol, attempt.current.input);
-            if (!result.success) { attempt.current = null; setMessage(result.error); return; }
+            if (!result.success) {
+                attempt.current = null;
+                setMessage(result.code === 'JOURNAL_CAPACITY'
+                    ? '本次未追加：研究历史已达到单条容量限制。草稿仍保留，请前往「研究备份」导出完整 JSON；已有历史不会截断。'
+                    : result.error);
+                return;
+            }
             setEntries(current => mergeJournalEntries(current, result.entries));
             setLoaded(true);
             submittedFingerprint.current = attempt.current.fingerprint;
@@ -161,17 +167,18 @@ export default function WatchlistJournal({ entry, onSaved, onClose }: { entry: W
         <div className="flex flex-wrap items-center justify-between gap-2"><h3 ref={heading} tabIndex={-1} className="font-semibold">{entry.symbol} 观点历史与复核</h3><button type="button" className="btn min-h-12" onClick={onClose}>关闭历史与复核</button></div>
         <p className="text-xs text-faint">历史按追加时间倒序加载。旧观点只记录已留存内容，不补造过去的修改时间；复核按你选择的交易日归档。</p>
         <div className="space-y-3" aria-busy={loading}>
-            {entries.map(item => <JournalRecord key={`${item.kind}-${item.id}`} entry={item} onCorrect={correct} />)}
+            {entries.map(item => <JournalRecord key={`${item.kind}-${item.id}`} entry={item} onCorrect={entry.archivedAt ? undefined : correct} />)}
             {loading && <p role="status" className="text-sm text-faint">正在加载历史…</p>}
             {loadError && <div role="alert"><p className="text-sm text-down">{loadError}</p><button type="button" className="btn min-h-12" disabled={loading} onClick={() => void load(loaded ? cursor : undefined)}>重试加载历史</button></div>}
             {loaded && !entries.length && !loading && <p className="text-sm text-faint">暂无已留存的历史或复核记录。可在下方追加第一次复核。</p>}
             {cursor && !loadError && <button type="button" className="btn min-h-12" disabled={loading} onClick={() => void load(cursor)}>{loading ? '加载中…' : '加载更多历史'}</button>}
         </div>
-        <form method="post" noValidate onSubmit={submit} className="space-y-4 border-t border-line pt-4" aria-label={`${entry.symbol} 追加复核`}>
+        {entry.archivedAt ? <p className="text-sm text-faint">研究已归档，历史只读。恢复关注后可继续追加复核。</p> : <form method="post" noValidate onSubmit={submit} className="space-y-4 border-t border-line pt-4" aria-label={`${entry.symbol} 追加复核`}>
             <fieldset className="min-w-0 space-y-4">
                 <legend className="font-medium">{correction ? '追加更正复核' : '追加复核'}</legend>
                 <p className="text-xs text-faint">记录已发生的变化并区分价格、事实和判断；不把待发生的事件写成已验证事实。交易日由你选择（{zone}）。</p>
                 <p ref={summary} tabIndex={-1} role="status" aria-live="polite" className="break-words text-sm">{message}</p>
+                {message.includes('容量') && <a href="#research-backup" className="inline-block min-h-12 underline">前往研究备份，导出已有历史</a>}
                 {correction && <p className="break-all text-xs">更正记录：{correction} <button type="button" className="btn min-h-12" onClick={() => setCorrection(undefined)}>取消更正引用</button></p>}
                 <div className="space-y-1"><label htmlFor={`${id}-tradingDate`} className="block text-sm font-medium">复核交易日（必填）</label>
                     <input id={`${id}-tradingDate`} name="tradingDate" type="date" required min="1900-01-01" max={today} value={draft.tradingDate} onChange={event => change('tradingDate', event.target.value)} onBlur={() => setErrors(current => ({ ...current, tradingDate: validateReviewDraft(draft, today).tradingDate }))} className={controlClass} aria-invalid={Boolean(errors.tradingDate)} aria-describedby={`${id}-tradingDate-error`} />
@@ -188,6 +195,6 @@ export default function WatchlistJournal({ entry, onSaved, onClose }: { entry: W
             <div className="flex flex-wrap gap-3"><button type="submit" disabled={pending} className="btn btn-primary min-h-12">{pending ? '提交中…' : '追加复核记录'}</button>
                 {attempt.current && !pending && <button type="button" className="btn min-h-12" onClick={() => void saveAttempt()}>重试上次提交</button>}
                 <button type="button" className="btn min-h-12" onClick={() => { setDraft({ ...EMPTY }); setCorrection(undefined); setErrors({}); }}>开始新草稿</button></div>
-        </form>
+        </form>}
     </section>;
 }

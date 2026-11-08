@@ -5,19 +5,19 @@ import { hasFinnhubQuotes } from '@/lib/markets';
 
 const HK_SYMBOL = '00700' + '.HK';
 
-type SavedRow = { _id: string; userId: string; symbol: string; company: string; addedAt: string; note?: string };
-type Query = { userId: string; symbol?: string | { $in: string[] } };
+type SavedRow = { _id: string; userId: string; symbol: string; company: string; addedAt: string; note?: string; archivedAt?: string | null; journalVersion?: number };
+type Query = { userId: string; symbol?: string | { $in: string[] }; archivedAt?: null | { $ne: null } };
 const mocks = vi.hoisted(() => ({
     rows: [] as SavedRow[],
     requireUserId: vi.fn(), getSession: vi.fn(), revalidatePath: vi.fn(),
-    findOne: vi.fn(), find: vi.fn(), countDocuments: vi.fn(), findOneAndUpdate: vi.fn(), deleteMany: vi.fn(),
+    findOne: vi.fn(), find: vi.fn(), countDocuments: vi.fn(), findOneAndUpdate: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn(),
     realtime: vi.fn(), yahoo: vi.fn(), localSearch: vi.fn(), fetch: vi.fn(),
 }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: vi.fn() }));
 vi.mock('@/database/models/watchlist.model', () => ({ Watchlist: {
     findOne: mocks.findOne, find: mocks.find, countDocuments: mocks.countDocuments,
-    findOneAndUpdate: mocks.findOneAndUpdate, deleteMany: mocks.deleteMany,
-} }));
+    findOneAndUpdate: mocks.findOneAndUpdate, deleteMany: mocks.deleteMany, updateMany: mocks.updateMany,
+}, WatchlistLifecycle: { updateOne: vi.fn().mockResolvedValue({}), findOneAndUpdate: vi.fn().mockResolvedValue({}), findById: vi.fn() } }));
 vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.requireUserId, getSession: mocks.getSession }));
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock('@/lib/realtime-market', () => ({ fetchRealtimeQuotes: mocks.realtime }));
@@ -28,7 +28,8 @@ vi.mock('@/lib/market-data', () => ({ QUOTE_TTL_SECONDS: 15 }));
 
 function matches(row: SavedRow, query: Query) {
     return row.userId === query.userId && (!query.symbol || (typeof query.symbol === 'string'
-        ? row.symbol === query.symbol : query.symbol.$in.includes(row.symbol)));
+        ? row.symbol === query.symbol : query.symbol.$in.includes(row.symbol)))
+        && (!Object.hasOwn(query, 'archivedAt') || (query.archivedAt === null ? row.archivedAt == null : row.archivedAt != null));
 }
 function row(symbol: string, overrides: Partial<SavedRow> = {}): SavedRow {
     return { _id: symbol, userId: 'user-123', symbol, company: symbol, addedAt: '2025-01-01T00:00:00.000Z', ...overrides };
@@ -47,6 +48,13 @@ beforeEach(async () => {
     mocks.find.mockImplementation((query: Query) => ({ sort: async () => mocks.rows.filter((item) => matches(item, query)) }));
     mocks.countDocuments.mockImplementation(async (query: Query) => mocks.rows.filter((item) => matches(item, query)).length);
     mocks.findOneAndUpdate.mockImplementation(async (_query: Query, update: { $setOnInsert: Omit<SavedRow, '_id'> }) => ({ _id: 'new', ...update.$setOnInsert }));
+    mocks.updateMany.mockImplementation(async (query: Query, update: { $set: { archivedAt: Date | null }; $inc: { journalVersion: number } }) => {
+        for (const item of mocks.rows.filter((item) => matches(item, query))) {
+            item.archivedAt = update.$set.archivedAt?.toISOString() ?? null;
+            item.journalVersion = (item.journalVersion || 0) + update.$inc.journalVersion;
+        }
+        return { acknowledged: true };
+    });
     mocks.deleteMany.mockImplementation(async (query: Query) => {
         mocks.rows = mocks.rows.filter((item) => !matches(item, query));
         return { acknowledged: true };
@@ -132,12 +140,16 @@ describe('watchlist aliases without a database migration', () => {
         expect(mocks.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    it('checks and explicitly removes all aliases only for the signed-in user', async () => {
+    it('checks active membership and archives all aliases only for the signed-in user', async () => {
         mocks.rows = [row('0700.HK'), row('HKEX:700'), row(HK_SYMBOL, { userId: 'other-user' }), row('AAPL')];
         expect(await watchlist.isStockInWatchlist(HK_SYMBOL)).toBe(true);
-        expect(mocks.findOne).toHaveBeenCalledWith({ userId: 'user-123', symbol: { $in: expect.arrayContaining(['0700.HK', 'HKEX:700', HK_SYMBOL]) } });
+        expect(mocks.findOne).toHaveBeenCalledWith({ userId: 'user-123', symbol: { $in: expect.arrayContaining(['0700.HK', 'HKEX:700', HK_SYMBOL]) }, archivedAt: null });
         await watchlist.removeFromWatchlist(HK_SYMBOL);
-        expect(mocks.rows.map((item) => [item.userId, item.symbol])).toEqual([['other-user', HK_SYMBOL], ['user-123', 'AAPL']]);
+        expect(mocks.rows).toHaveLength(4);
+        expect(mocks.rows.slice(0, 2).every((item) => item.archivedAt && item.journalVersion === 1)).toBe(true);
+        expect(mocks.rows.slice(2).every((item) => item.archivedAt === undefined)).toBe(true);
+        expect(await watchlist.isStockInWatchlist(HK_SYMBOL)).toBe(false);
+        expect(mocks.deleteMany).not.toHaveBeenCalled();
     });
 
     it('finds legacy Shanghai and Beijing aliases without matching a different Taiwan exchange', async () => {

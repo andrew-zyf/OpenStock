@@ -13,18 +13,20 @@ vi.mock('@/database/mongoose', () => ({ connectToDatabase: vi.fn().mockResolvedV
 const flags = { alertsEnabled: true };
 vi.mock('@/lib/market-data', () => ({ get alertsEnabled() { return flags.alertsEnabled; } }));
 
+const updateOne = vi.fn();
 const findOneAndDelete = vi.fn();
 const create = vi.fn();
 const countDocuments = vi.fn().mockResolvedValue(0);
 vi.mock('@/database/models/alert.model', () => ({
     Alert: {
         findOneAndDelete: (...args: unknown[]) => findOneAndDelete(...args),
+        updateOne: (...args: unknown[]) => updateOne(...args),
         create: (...args: unknown[]) => create(...args),
         countDocuments: (...args: unknown[]) => countDocuments(...args),
     },
 }));
 
-import { createAlert, deleteAlert } from '@/lib/actions/alert.actions';
+import { createAlert, deleteAlert, pauseAlert } from '@/lib/actions/alert.actions';
 
 describe('alert actions are scoped to the session user', () => {
     beforeEach(() => {
@@ -39,6 +41,25 @@ describe('alert actions are scoped to the session user', () => {
         await expect(createAlert({ symbol: 'AAPL', targetPrice: 200, condition: 'ABOVE' })).rejects.toThrow('up to 50 active alerts');
         expect(countDocuments).toHaveBeenCalledWith({ userId: 'user-123', active: true, triggered: false, expiresAt: { $gt: expect.any(Date) } });
         expect(create).not.toHaveBeenCalled();
+    });
+
+    it('pauses only the owner’s untriggered alert without clearing trigger or delivery evidence', async () => {
+        const id = '0123456789abcdef01234567';
+        updateOne.mockResolvedValueOnce({ matchedCount: 1 });
+        await expect(pauseAlert(id)).resolves.toEqual({ success: true });
+        expect(updateOne).toHaveBeenCalledWith({ _id: id, userId: 'user-123', triggered: false }, { $set: { active: false } });
+        expect(findOneAndDelete).not.toHaveBeenCalled();
+        expect(observations).not.toHaveBeenCalled();
+        updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+        await expect(pauseAlert(id)).resolves.toEqual({ success: false });
+    });
+
+    it('rejects invalid or signed-out pause calls before touching storage', async () => {
+        await expect(pauseAlert('invalid')).rejects.toThrow('无效');
+        expect(updateOne).not.toHaveBeenCalled();
+        requireUserId.mockRejectedValueOnce(new Error('Unauthorized'));
+        await expect(pauseAlert('0123456789abcdef01234567')).rejects.toThrow('Unauthorized');
+        expect(updateOne).not.toHaveBeenCalled();
     });
 
     it('deletes the user’s own alert', async () => {
