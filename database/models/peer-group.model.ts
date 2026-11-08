@@ -6,6 +6,7 @@ export interface IPeerGroup {
     userId: string;
     slot: number;
     name: string;
+    purpose: 'peer' | 'theme';
     members: PeerMember[];
     membershipSavedAt: Date;
 }
@@ -18,6 +19,7 @@ const PeerGroupSchema = new Schema<IPeerGroup>({
     userId: { type: String, required: true, immutable: true },
     slot: { type: Number, required: true, min: 0, max: 9, immutable: true },
     name: { type: String, required: true, trim: true, maxlength: 60, immutable: true },
+    purpose: { type: String, enum: ['peer', 'theme'], default: 'peer', immutable: true },
     members: { type: [MemberSchema], required: true, immutable: true, validate: (members: PeerMember[]) => members.length > 0 && members.length <= 20 && new Set(members.map(member => member.symbolId)).size === members.length },
     membershipSavedAt: { type: Date, required: true, immutable: true },
 });

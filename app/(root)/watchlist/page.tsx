@@ -4,13 +4,15 @@ import { getUserWatchlist, getArchivedWatchlist } from '@/lib/actions/watchlist.
 import ResearchArchive from '@/components/watchlist/ResearchArchive';
 import ResearchBackup from '@/components/watchlist/ResearchBackup';
 import ResearchChanges from '@/components/watchlist/ResearchChanges';
+import ResearchFacts from '@/components/watchlist/ResearchFacts';
+import ResearchMaintenance from '@/components/watchlist/ResearchMaintenance';
+import ResearchWorkspace from '@/components/watchlist/ResearchWorkspace';
 import DailyResearchPanel from '@/components/watchlist/DailyResearchPanel';
 import ManualPlans from '@/components/watchlist/ManualPlans';
 import { getUserAlerts } from '@/lib/actions/alert.actions';
 import { alertsEnabled } from '@/lib/market-data';
-import { getWatchlistData } from '@/lib/actions/finnhub.actions';
+import WatchlistResearch from '@/components/watchlist/WatchlistResearch';
 import { getWatchlistNews, getMultiMarketNews } from '@/lib/actions/china-market.actions';
-import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import AlertsPanel from '@/components/watchlist/AlertsPanel';
 import AlertHealthStatus from '@/components/watchlist/AlertHealthStatus';
 import MarketEventsCalendar from '@/components/watchlist/MarketEventsCalendar';
@@ -18,7 +20,6 @@ import NewsList from '@/components/watchlist/NewsList';
 import Panel from '@/components/Panel';
 import DataFreshness from '@/components/DataFreshness';
 import { SearchButton } from '@/components/SearchCommand';
-import type { WatchlistEntry } from '@/lib/watchlist-observation';
 
 const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     <div className="row-list" aria-busy="true">
@@ -32,67 +33,58 @@ const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     </div>
 );
 
-async function Symbols({ items }: { items: WatchlistEntry[] }) {
-    return <WatchlistTable initialRows={await getWatchlistData(items)} />;
-}
-
 async function News({ items }: { items: { symbol: string; company?: string }[] }) {
-    const [result, marketNews] = await Promise.all([getWatchlistNews(items), getMultiMarketNews()]);
-    return <NewsList news={result.articles} marketNews={marketNews} status={result.status} sources={result.sources} coverage={result.coverage} />;
+    try {
+        const [result, marketNews] = await Promise.all([getWatchlistNews(items), getMultiMarketNews()]);
+        return <NewsList news={result.articles} marketNews={marketNews} status={result.status} sources={result.sources} coverage={result.coverage} />;
+    } catch { return <p role="status" className="p-4 text-sm">资讯读取失败，不能据此判断没有新消息。请稍后刷新。</p>; }
 }
 
-// DB reads render first; everything from Finnhub streams in behind skeletons.
 export default async function WatchlistPage() {
-    const [items, alerts, archived] = await Promise.all([getUserWatchlist(), getUserAlerts(), getArchivedWatchlist()]);
-    const symbols: string[] = items.map((item: { symbol: string }) => item.symbol);
+    const [watchlistRead, alertsRead, archiveRead] = await Promise.allSettled([getUserWatchlist(), getUserAlerts(), getArchivedWatchlist()]);
+    const items = watchlistRead.status === 'fulfilled' ? watchlistRead.value : [];
+    const alerts = alertsRead.status === 'fulfilled' ? alertsRead.value : [];
+    const archived = archiveRead.status === 'fulfilled' ? archiveRead.value : [];
+    const watchlistAvailable = watchlistRead.status === 'fulfilled';
+    const alertsAvailable = alertsRead.status === 'fulfilled';
+    const archiveAvailable = archiveRead.status === 'fulfilled';
+    const failed = [!watchlistAvailable && '自选研究', !alertsAvailable && '价格预警', !archiveAvailable && '归档研究'].filter(Boolean);
     const activeAlerts = alerts.filter((a: { triggered?: boolean }) => !a.triggered).length;
 
-    return (
-        <>
-            <header className="page-head">
-                <div>
-                    <h1 className="page-title">自选股票</h1>
-                    <p className="page-sub num flex flex-wrap items-center gap-x-2">
-                        已关注 {symbols.length} 只标的 <span aria-hidden>·</span> <DataFreshness />
-                    </p>
-                </div>
-                <SearchButton className="btn btn-primary"><Plus /> 添加自选</SearchButton>
-            </header>
-
-            <nav aria-label="研究任务" className="mb-3 flex flex-wrap gap-2">
-                <a className="btn min-h-12" href="#research-changes">盘前 · 变化与期限</a>
-                <a className="btn min-h-12" href="#watchlist-observations">盘中 · 数据与关键价</a>
-                <a className="btn min-h-12" href="#daily-research">盘后 · 量价与同业</a>
-                <a className="btn min-h-12" href="#manual-plans">人工计划</a>
-                <a className="btn min-h-12" href="#research-archive">归档与备份</a>
-            </nav>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-                <div className="flex min-w-0 flex-col gap-3">
-                    <ResearchChanges />
-                    <div id="watchlist-observations" className="min-w-0">
-                    <Panel title="股票列表" sub="记录观察理由与失效条件；行情、同市场基准和相关资讯辅助复核">
-                        <Suspense fallback={<RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />}>
-                            <Symbols items={items} />
-                        </Suspense>
-                    </Panel>
-                    </div>
-                    <MarketEventsCalendar items={items} />
-                    <div id="daily-research" className="min-w-0"><DailyResearchPanel watchedSymbols={items} /></div>
-                    <div id="manual-plans" className="min-w-0"><ManualPlans items={items} /></div>
-                    <ResearchArchive entries={archived} alerts={alerts} />
-                    <ResearchBackup />
-                    <Panel title="自选资讯" sub="仅展示匹配关注标的的资讯，可切换全市场动态">
-                        <Suspense fallback={<RowsSkeleton />}>
-                            <News items={items} />
-                        </Suspense>
-                    </Panel>
-                </div>
-
-                <Panel title="价格预警" sub={alertsEnabled ? `${activeAlerts} 条未触发 · 后台检查依赖任务配置` : 'OpenStock 预警服务'} className="self-start">
-                    <AlertHealthStatus />
-                    <AlertsPanel alerts={alerts} />
-                </Panel>
+    return <>
+        <header className="page-head">
+            <div><h1 className="page-title">自选股票</h1>
+                <p className="page-sub num flex flex-wrap items-center gap-x-2">{watchlistAvailable ? `已关注 ${items.length} 只标的` : '自选数量暂时未知'} <span aria-hidden>·</span> <DataFreshness /></p>
             </div>
-        </>
-    );
+            <SearchButton className="btn btn-primary"><Plus /> 添加自选</SearchButton>
+        </header>
+        {!!failed.length && <div role="status" className="panel mb-3 space-y-2 p-4 text-sm">
+            <p>{failed.join('、')}读取失败，当前数量和内容未知。已保存资料未删除；请在「资料与维护」核对协调状态后重试。</p>
+            <a href="#task-data" className="inline-block min-h-12 underline">查看资料与维护</a>
+        </div>}
+        <ResearchWorkspace activeSymbols={items.map(item => item.symbol)} archivedSymbols={archived.map(item => item.symbol)} activeAvailable={watchlistAvailable} archiveAvailable={archiveAvailable}
+            due={<ResearchChanges />}
+            observe={<>
+                <div id="watchlist-observations" className="min-w-0">
+                    <Panel title="股票列表" sub="记录观察理由与失效条件；行情、同市场基准和相关资讯辅助复核">
+                        <WatchlistResearch items={watchlistAvailable ? items : null} />
+                    </Panel>
+                </div>
+                <Panel title="价格预警" sub={!alertsAvailable ? '预警数量未知' : alertsEnabled ? `${activeAlerts} 条未触发 · 后台检查依赖任务配置` : 'OpenStock 预警服务'}>
+                    <AlertHealthStatus />
+                    {alertsAvailable ? <AlertsPanel alerts={alerts} /> : <p role="status" className="p-4 text-sm">预警读取失败，检测与投递状态未知，请刷新核对。</p>}
+                </Panel>
+                {watchlistAvailable && <MarketEventsCalendar items={items} />}
+                {watchlistAvailable && <Panel title="自选资讯" sub="仅展示匹配关注标的的资讯，可切换全市场动态"><Suspense fallback={<RowsSkeleton />}><News items={items} /></Suspense></Panel>}
+            </>}
+            review={<div id="daily-research" className="min-w-0">{!watchlistAvailable && <p role="status" className="mb-3 text-sm">关注列表未读到；当前仍可读取固定组与已保存对照。</p>}<DailyResearchPanel watchedSymbols={items} /></div>}
+            plans={<div id="manual-plans" className="min-w-0"><ManualPlans items={items} /></div>}
+            facts={<ResearchFacts items={items} />}
+            data={<>
+                <ResearchMaintenance />
+                {archiveAvailable ? <ResearchArchive entries={archived} alerts={alerts} alertsAvailable={alertsAvailable} /> : <p role="status" className="panel p-4 text-sm">归档研究读取失败，归档数量未知。请核对协调状态后刷新。</p>}
+                <ResearchBackup />
+            </>}
+        />
+    </>;
 }

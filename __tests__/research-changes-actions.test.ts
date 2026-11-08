@@ -1,6 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResearchChangeState } from '@/database/models/research-change.model';
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), aggregate: vi.fn(), histories: vi.fn(), states: vi.fn(), create: vi.fn(), update: vi.fn(), lifecycle: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), aggregate: vi.fn(), histories: vi.fn(), states: vi.fn(), create: vi.fn(), update: vi.fn(), lifecycle: vi.fn(), duePlans: vi.fn(), facts: vi.fn() }));
+vi.mock('@/lib/manual-plan-store', () => ({ listDueManualPlans: mocks.duePlans }));
+vi.mock('@/lib/actions/research-facts.actions', () => ({ getResearchFacts: mocks.facts }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: mocks.connect }));
 vi.mock('@/database/models/watchlist.model', () => ({ Watchlist: { aggregate: mocks.aggregate } }));
 vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.auth }));
@@ -16,10 +18,15 @@ const owner = { _id: 'owner', symbol: '600519.SH', company: '贵州茅台', adde
     { kind: 'observation', id: 'baseline', source: 'legacy-capture', modifiedAt: null, recordedAt: '2026-11-07T00:00:00.000Z', observation: { reviewStatus: 'watching', note: '旧观点' } },
     { kind: 'observation', id: 'edit', source: 'edit', modifiedAt: '2026-11-08T00:00:00.000Z', recordedAt: '2026-11-08T00:00:00.000Z', observation: { reviewStatus: 'watching', note: '新观点', nextReviewDate: '2026-11-08' } },
 ] };
+const plan = { id: 'plan-unwatched', symbol: 'AAPL', waitingCondition: '等待财报', invalidation: '利润率下降', nextAction: '核对利润',
+    checkDate: '2026-11-07', manualState: 'waiting', scheduleRevision: 1, version: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' };
+const fact = { id: 'fact-original', symbol: 'AAPL', title: '人工登记财报', factText: '原文', factType: 'earnings', reportingPeriod: '2026Q3',
+    sourceUrl: 'https://example.com/report', sourcePublishedAt: null, version: 1, createdAt: '2026-11-07T00:00:00.000Z', correctionOf: null };
 let states: ResearchChangeState[];
 beforeEach(() => {
     vi.clearAllMocks(); vi.useFakeTimers(); vi.setSystemTime(now); states = [];
     mocks.auth.mockResolvedValue('user-a'); mocks.connect.mockResolvedValue(undefined);
+    mocks.duePlans.mockResolvedValue({ plans: [], truncated: false }); mocks.facts.mockResolvedValue({ facts: [] });
     mocks.lifecycle.mockImplementation(async (_userId, _intent, callback) => callback());
     mocks.aggregate.mockResolvedValue([structuredClone(owner)]);
     mocks.histories.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) });
@@ -46,7 +53,8 @@ describe('authenticated persisted change inbox', () => {
     });
     it('stops before raw alias reads when lifecycle coordination cannot provide a consistent snapshot', async () => {
         mocks.lifecycle.mockRejectedValueOnce(new Error('研究记录正在处理其他请求，请稍后重试'));
-        await expect(getResearchChanges()).rejects.toThrow('正在处理其他请求');
+        const result = await getResearchChanges({ category: 'own-edit' });
+        expect(result).toMatchObject({ entries: [], readStatus: 'read-failed', readIssues: [{ scope: 'research', message: expect.stringContaining('协调状态未核对') }] });
         expect(mocks.aggregate).not.toHaveBeenCalled();
         expect(mocks.histories).not.toHaveBeenCalled(); expect(mocks.states).not.toHaveBeenCalled();
         expect(mocks.create).not.toHaveBeenCalled(); expect(mocks.update).not.toHaveBeenCalled();
@@ -132,8 +140,74 @@ describe('authenticated persisted change inbox', () => {
         expect(result.entries).toHaveLength(1); expect(result.entries[0].id).not.toBe(first.id);
         expect(result.truncated).toBe(true);
     });
+    it('reads independent unwatched or archived due plans without reading any unrelated category', async () => {
+        mocks.lifecycle.mockRejectedValue(new Error('unrelated maintenance'));
+        mocks.duePlans.mockResolvedValue({ plans: [plan], truncated: false });
+        const result = await getResearchChanges({ category: 'plan-due', limit: 1 });
+        expect(result).toMatchObject({ readStatus: 'read', truncated: false, entries: [{ kind: 'manual-plan-due', symbol: 'AAPL', planId: plan.id }] });
+        expect(mocks.duePlans).toHaveBeenCalledWith('user-a', now);
+        expect(mocks.aggregate).not.toHaveBeenCalled(); expect(mocks.histories).not.toHaveBeenCalled(); expect(mocks.facts).not.toHaveBeenCalled();
+    });
+    it('keeps plan handling across text edits and snooze expiry, while rescheduling creates a fresh concrete version', async () => {
+        mocks.duePlans.mockResolvedValue({ plans: [plan], truncated: false });
+        const [due] = (await getResearchChanges({ category: 'plan-due' })).entries;
+        await setResearchChangeState({ id: due.id, status: 'snoozed', snoozedUntil: '2026-11-09T01:00:00.000Z', expectedStateVersion: 0 });
+        mocks.duePlans.mockResolvedValue({ plans: [{ ...plan, version: 2, waitingCondition: '补充文字', updatedAt: now.toISOString() }], truncated: false });
+        expect((await getResearchChanges({ category: 'plan-due' })).entries).toEqual([]);
+        vi.setSystemTime(new Date('2026-11-10T01:00:00.000Z'));
+        expect((await getResearchChanges({ category: 'plan-due' })).entries[0]).toMatchObject({ id: due.id, status: 'pending', stateVersion: 1 });
+        mocks.duePlans.mockResolvedValue({ plans: [{ ...plan, version: 3, scheduleRevision: 2, checkDate: '2026-11-08' }], truncated: false });
+        const [rescheduled] = (await getResearchChanges({ category: 'plan-due' })).entries;
+        expect(rescheduled.id).not.toBe(due.id); expect(rescheduled.stateVersion).toBe(0);
+        expect(plan).toMatchObject({ checkDate: '2026-11-07', manualState: 'waiting', version: 1 });
+        expect(mocks.aggregate).not.toHaveBeenCalled(); expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it.each(['external-fact', 'plan-due', 'review-due'] as const)('filters %s before the visible limit despite many newer own edits', async (category) => {
+        const edits = Array.from({ length: 100 }, (_, index) => ({ ...owner.journal[1], id: `edit-${index}`, recordedAt: new Date(now.getTime() + index * 1000).toISOString(), observation: { ...owner.journal[1].observation, note: `new-${index}` } }));
+        mocks.aggregate.mockResolvedValue([{ ...owner, journal: [owner.journal[0], ...edits] }]);
+        mocks.duePlans.mockResolvedValue({ plans: [plan], truncated: false }); mocks.facts.mockResolvedValue({ facts: [fact] });
+        const result = await getResearchChanges({ category, limit: 1 });
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0].kind).toBe({ 'external-fact': 'manual-fact', 'plan-due': 'manual-plan-due', 'review-due': 'review-due' }[category]);
+        expect(result.truncated).toBe(false);
+    });
+    it('maps manual facts independently of membership, preserves old correction versions and their handling', async () => {
+        mocks.aggregate.mockResolvedValue([]); mocks.facts.mockResolvedValue({ facts: [fact] });
+        const [original] = (await getResearchChanges({ category: 'external-fact' })).entries;
+        expect(original).toMatchObject({ kind: 'manual-fact', factId: fact.id, source: '人工登记事实（未经自动核验）', sourceUrl: fact.sourceUrl });
+        await setResearchChangeState({ id: original.id, status: 'ignored', expectedStateVersion: 0 });
+        mocks.facts.mockResolvedValue({ facts: [{ ...fact, id: 'fact-correction', version: 2, correctionOf: fact.id }, fact] });
+        const current = await getResearchChanges({ category: 'external-fact', includeHandled: true });
+        expect(current.entries).toHaveLength(2);
+        expect(current.entries.find(entry => entry.id === original.id)?.status).toBe('ignored');
+        expect(current.entries.find(entry => entry.factId === 'fact-correction')).toMatchObject({ status: 'pending', stateVersion: 0 });
+        expect(mocks.facts).toHaveBeenCalledWith({ limit: 50 });
+    });
+    it('truthfully signals bounded plans and fact pages', async () => {
+        mocks.duePlans.mockResolvedValue({ plans: [plan], truncated: true });
+        expect((await getResearchChanges({ category: 'plan-due' })).truncated).toBe(true);
+        mocks.facts.mockResolvedValue({ facts: [fact], nextCursor: 'more' });
+        expect((await getResearchChanges({ category: 'external-fact' })).truncated).toBe(true);
+    });
+    it('returns production-safe scoped read failures and preserves independent readable categories', async () => {
+        mocks.lifecycle.mockRejectedValue(new Error('secret raw coordinator detail'));
+        mocks.duePlans.mockResolvedValue({ plans: [plan], truncated: false }); mocks.facts.mockRejectedValue(new Error('secret DB detail'));
+        const result = await getResearchChanges();
+        expect(result).toMatchObject({ readStatus: 'partial', entries: [{ planId: plan.id }], readIssues: [{ scope: 'research' }, { scope: 'facts' }] });
+        expect(JSON.stringify(result)).not.toContain('secret');
+        mocks.duePlans.mockRejectedValue(new Error('plans unavailable'));
+        expect(await getResearchChanges({ category: 'plan-due' })).toMatchObject({ entries: [], readStatus: 'read-failed', readIssues: [{ scope: 'plans' }] });
+    });
+    it('distinguishes unread handling from pending and sanitizes database failures', async () => {
+        mocks.states.mockImplementation(() => ({ limit: () => ({ lean: async () => { throw new Error('secret'); } }) }));
+        expect(await getResearchChanges({ category: 'review-due' })).toMatchObject({ entries: [], readStatus: 'read-failed', readIssues: [{ scope: 'handling' }] });
+        mocks.connect.mockRejectedValue(new Error('secret connection'));
+        const result = await getResearchChanges();
+        expect(result.readStatus).toBe('read-failed'); expect(JSON.stringify(result)).not.toContain('secret');
+    });
     it('rejects unbounded options and malformed snooze inputs before database work', async () => {
         await expect(getResearchChanges({ limit: 101 })).rejects.toThrow();
+        await expect(getResearchChanges({ category: 'unknown' as 'own-edit' })).rejects.toThrow();
         await expect(setResearchChangeState({ id: 'review-due:' + 'a'.repeat(64), status: 'snoozed', expectedStateVersion: 0, snoozedUntil: now.toISOString() })).rejects.toThrow();
         expect(mocks.connect).not.toHaveBeenCalled();
     });

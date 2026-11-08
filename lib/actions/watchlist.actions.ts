@@ -10,6 +10,7 @@ import { requireUserId } from '@/lib/better-auth/auth';
 import { getSymbolAliases } from '@/lib/utils';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
 import { fetchRealtimeQuotes } from '@/lib/realtime-market';
+import { researchEvidenceBelongsTo } from '@/lib/research-evidence';
 import {
     mergeWatchlistRecords, observationOwner, snapshotFromQuote, validateObservationInput,
     type ObservationInput, type SavedWatchlistRecord, type WatchlistEntry,
@@ -341,7 +342,7 @@ export async function appendWatchlistReview(
     symbol: string,
     input: WatchlistReviewInput,
 ): Promise<{ success: true; review: WatchlistReview; deduplicated: boolean; entry: WatchlistEntry; entries: WatchlistJournalEntry[] }
-    | { success: false; code: 'CONFLICT' | 'NOT_FOUND' | 'INVALID_CORRECTION' | 'ARCHIVED' | 'JOURNAL_CAPACITY'; error: string } | LifecycleFailure> {
+    | { success: false; code: 'CONFLICT' | 'NOT_FOUND' | 'INVALID_CORRECTION' | 'INVALID_EVIDENCE' | 'ARCHIVED' | 'JOURNAL_CAPACITY'; error: string } | LifecycleFailure> {
     const userId = await requireUserId();
     const ticker = checkedSymbol(symbol);
     const request = validateReviewInput(input);
@@ -359,6 +360,9 @@ export async function appendWatchlistReview(
     const entry = mergeWatchlistRecords(records)[0];
     // Exact request retries above remain readable after archive; all new writes require restore.
     if (entry.archivedAt) return archivedFailure;
+    if (request.evidenceReferences?.length && !await researchEvidenceBelongsTo(userId, ticker, request.evidenceReferences)) {
+        return { success: false, code: 'INVALID_EVIDENCE', error: '证据必须属于当前账户及这只标的；草稿未保存，请核对引用。' };
+    }
     const owner = observationOwner(records);
     let sourceQuote;
     try {

@@ -29,5 +29,19 @@ describe('research workbench visible contracts', () => {
         expect(html).toContain('这不表示所有市场数据均已核验');
         expect(html).toContain('不会改变观点有效性');
         expect(html).toContain('显示已处理与稍后核查事项');
+        expect(html).toContain('尚未读取本次分类范围');
+        expect(html).not.toContain('已读取的留存范围内没有待显示的变化');
+        expect(html).toContain('计划状态或原检查日期');
+        expect(html).toContain('人工事实未经自动核验');
+    });
+    it('exposes five native, explicitly labelled category choices and keeps the handled filter separate', () => {
+        const html = renderToStaticMarkup(<ResearchChanges />);
+        expect(html).toContain('<legend class="text-sm font-medium">变化类别</legend>');
+        for (const label of ['全部类别', '外部事件 / 事实', '本人编辑', '计划到期', '复核到期']) expect(html).toContain(label);
+        const radios = [...html.matchAll(/<input\b[^>]*type="radio"[^>]*>/g)].map(match => match[0]);
+        expect(radios).toHaveLength(5);
+        expect(new Set(radios.map(input => /\bname="([^"]+)"/.exec(input)?.[1])).size).toBe(1);
+        for (const radio of radios) expect(html).toContain(`for="${/\bid="([^"]+)"/.exec(radio)?.[1]}"`);
+        expect(html).not.toContain('role="tab"');
     });
 });

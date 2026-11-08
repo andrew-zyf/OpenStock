@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChartSeries } from '@/lib/realtime-market';
-import { canonicalPeerMember, compareDailyResearch, compareDailyVolume, createDailyHistoryLoader, validatePeerGroupInput } from '@/lib/market/daily-research';
+import { canonicalPeerMember, compareDailyResearch, compareDailyVolume, createDailyHistoryLoader, peerGroupMarketCounts, validatePeerGroupInput } from '@/lib/market/daily-research';
 import { compareRelativeHistory } from '@/lib/market/relative-history';
 
 function history(symbol = '000001.SZ', count = 21, overrides: Partial<ChartSeries> = {}): ChartSeries {
@@ -102,11 +102,18 @@ describe('completed volume median', () => {
 
 describe('canonical fixed groups', () => {
     it('canonicalizes HK aliases and retains TWSE vs TPEx identities', () => {
-        expect(validatePeerGroupInput({ name: '  我的同业  ', symbolIds: ['700.HK', 'HKEX:700', 'HKEX:00700.HK'] })).toEqual({ name: '我的同业', members: [{ symbolId: 'HKEX:00700.HK', symbol: '00700.HK' }] });
+        expect(validatePeerGroupInput({ name: '  我的同业  ', symbolIds: ['700.HK', 'HKEX:700', 'HKEX:00700.HK'] })).toEqual({ name: '我的同业', purpose: 'peer', members: [{ symbolId: 'HKEX:00700.HK', symbol: '00700.HK' }] });
         expect(canonicalPeerMember('TWSE:2330').symbolId).toBe('TWSE:2330.TW');
         expect(canonicalPeerMember('TPEX:6488').symbolId).toBe('TPEX:6488.TWO');
         expect(canonicalPeerMember('US:AAPL').symbol).toBe('AAPL');
         expect(() => canonicalPeerMember('SSE:000001.SZ')).toThrow('身份');
+    });
+    it('keeps cross-market manual themes explicit and reports only membership counts by market', () => {
+        const group = validatePeerGroupInput({ name: '人工半导体主题', purpose: 'theme', symbolIds: ['000001.SZ', '700.HK', '2330.TW', '6488.TWO', 'AAPL'] });
+        expect(group.purpose).toBe('theme');
+        expect(peerGroupMarketCounts(group)).toEqual({ cn: 1, hk: 1, tw: 2, us: 1 });
+        expect(Object.keys(group)).toEqual(['name', 'purpose', 'members']);
+        expect(() => validatePeerGroupInput({ name: 'x', symbolIds: ['AAPL'], purpose: 'holdings' as 'peer' })).toThrow('用途');
     });
     it('bounds untrusted names and member counts before persistence', () => {
         for (const input of [{ name: '', symbolIds: ['AAPL'] }, { name: 'x', symbolIds: [] }, { name: 'x', symbolIds: Array(21).fill('AAPL') }, { name: 'x', symbolIds: ['$bad'] }]) expect(() => validatePeerGroupInput(input)).toThrow();

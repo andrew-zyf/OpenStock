@@ -5,7 +5,7 @@ vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.auth }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: mocks.connect }));
 vi.mock('@/database/models/watchlist.model', () => ({ Watchlist: { find: mocks.watchlist } }));
 vi.mock('@/database/models/peer-group.model', () => ({ PeerGroupRecord: { find: mocks.find, findOne: mocks.findOne, create: mocks.create, deleteOne: mocks.remove } }));
-import { createPeerGroup, deletePeerGroup, getPeerGroup, getPeerGroups } from '@/lib/actions/peer-groups.actions';
+import { createPeerGroup, createPeerGroupResult, deletePeerGroup, deletePeerGroupResult, getPeerGroup, getPeerGroups, getPeerGroupsResult } from '@/lib/actions/peer-groups.actions';
 const id = 'abcdef012345678901234567';
 const row = { _id: id, userId: 'owner-a', name: '同业', members: [{ symbol: '00700.HK', symbolId: 'HKEX:00700.HK' }], membershipSavedAt: new Date('2026-11-08T00:00:00Z') };
 beforeEach(() => {
@@ -31,7 +31,7 @@ describe('fixed peer group ownership and caps', () => {
         expect(mocks.connect).not.toHaveBeenCalled();
     });
     it('scopes list/get/delete to authenticated ownership and rejects foreign groups', async () => {
-        expect(await getPeerGroups()).toEqual([{ id, name: '同业', members: row.members, membershipSavedAt: '2026-11-08T00:00:00.000Z' }]);
+        expect(await getPeerGroups()).toEqual([{ id, name: '同业', purpose: 'peer', members: row.members, membershipSavedAt: '2026-11-08T00:00:00.000Z' }]);
         expect(mocks.find).toHaveBeenCalledWith({ userId: 'owner-a' });
         await getPeerGroup(id); expect(mocks.findOne).toHaveBeenCalledWith({ _id: id, userId: 'owner-a' });
         mocks.findOne.mockReturnValue({ lean: async () => null });
@@ -58,9 +58,19 @@ describe('fixed peer group ownership and caps', () => {
     it('canonicalizes immutable membership and only accepts active own members; ignores forged owner/date', async () => {
         await createPeerGroup({ name: ' 同业 ', symbolIds: ['700.HK', 'HKEX:00700.HK'], userId: 'other', membershipSavedAt: '2000-01-01' } as Parameters<typeof createPeerGroup>[0]);
         expect(mocks.watchlist).toHaveBeenCalledWith({ userId: 'owner-a', archivedAt: null });
-        expect(mocks.create).toHaveBeenCalledWith({ userId: 'owner-a', slot: 0, name: '同业', members: row.members, membershipSavedAt: expect.any(Date) });
+        expect(mocks.create).toHaveBeenCalledWith({ userId: 'owner-a', slot: 0, name: '同业', purpose: 'peer', members: row.members, membershipSavedAt: expect.any(Date) });
         await expect(createPeerGroup({ name: '另一组', symbolIds: ['AAPL'] })).rejects.toThrow('关注中自选');
         expect(mocks.create).toHaveBeenCalledTimes(1);
+    });
+    it('saves manual cross-market themes with the same fixed identity/time and combined slot cap', async () => {
+        mocks.watchlist.mockReturnValue({ select: () => ({ limit: () => ({ lean: async () => [{ symbol: '700.HK' }, { symbol: 'AAPL' }, { symbol: '2330.TW' }] }) }) });
+        const members = [{ symbolId: 'HKEX:00700.HK', symbol: '00700.HK' }, { symbolId: 'US:AAPL', symbol: 'AAPL' }, { symbolId: 'TWSE:2330.TW', symbol: '2330.TW' }];
+        mocks.create.mockResolvedValueOnce({ ...row, purpose: 'theme', members });
+        expect(await createPeerGroup({ name: '同一人工主题', purpose: 'theme', symbolIds: ['700.HK', 'AAPL', '2330.TW'] })).toMatchObject({ purpose: 'theme', members, membershipSavedAt: row.membershipSavedAt.toISOString() });
+        expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'owner-a', slot: 0, purpose: 'theme', members, membershipSavedAt: expect.any(Date) }));
+        mocks.create.mockClear().mockRejectedValue({ code: 11000 });
+        await expect(createPeerGroup({ name: '另一主题', purpose: 'theme', symbolIds: ['AAPL'] })).rejects.toThrow('最多保存 10');
+        expect(mocks.create).toHaveBeenCalledTimes(10);
     });
     it('bounds concurrent saves by unique owner slots rather than a racy count-then-insert', async () => {
         mocks.create.mockRejectedValueOnce({ code: 11000 }).mockResolvedValueOnce(row);
@@ -69,6 +79,13 @@ describe('fixed peer group ownership and caps', () => {
         mocks.create.mockClear().mockRejectedValue({ code: 11000 });
         await expect(createPeerGroup({ name: '同业', symbolIds: ['700.HK'] })).rejects.toThrow('最多保存 10');
         expect(mocks.create).toHaveBeenCalledTimes(10);
+    });
+    it('serializes client-facing expected errors and keeps database details private', async () => {
+        expect(await createPeerGroupResult({ name: '', symbolIds: ['700.HK'] })).toMatchObject({ ok: false, error: { code: 'INVALID_GROUP', message: '组名须为 1–60 字' } });
+        expect(await deletePeerGroupResult('$bad')).toMatchObject({ ok: false, error: { code: 'INVALID_GROUP' } });
+        mocks.auth.mockRejectedValue(new Error('private authentication data'));
+        const response = await getPeerGroupsResult();
+        expect(response).toMatchObject({ ok: false, error: { code: 'REQUEST_FAILED' } }); expect(JSON.stringify(response)).not.toContain('private');
     });
     it('does not retry unrelated database failures, and rejects malformed IDs before connecting', async () => {
         mocks.create.mockRejectedValueOnce(new Error('database down'));

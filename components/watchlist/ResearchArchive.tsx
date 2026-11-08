@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { restoreWatchlist } from '@/lib/actions/watchlist.actions';
@@ -11,11 +11,22 @@ import WatchlistJournal from './WatchlistJournal';
 import { observationTime } from './ObservationEditor';
 
 type RelatedAlert = { _id: string; symbol: string; active?: boolean; triggered?: boolean; expiresAt?: string };
-export default function ResearchArchive({ entries, alerts }: { entries: WatchlistEntry[]; alerts: RelatedAlert[] }) {
+export default function ResearchArchive({ entries, alerts, alertsAvailable = true }: { entries: WatchlistEntry[]; alerts: RelatedAlert[]; alertsAvailable?: boolean }) {
     const router = useRouter();
     const [history, setHistory] = useState<string>();
     const [pending, setPending] = useState(false);
     const [message, setMessage] = useState('');
+    useEffect(() => {
+        function openReview(event: Event) {
+            const detail = (event as CustomEvent).detail;
+            const raw = typeof detail === 'string' ? detail : detail?.symbol;
+            if (typeof raw !== 'string') return;
+            const symbol = identifyMarketAndCode(raw).normalizedSymbol;
+            if (entries.some(entry => entry.symbol === symbol)) setHistory(symbol);
+        }
+        window.addEventListener('openstock:open-review', openReview);
+        return () => window.removeEventListener('openstock:open-review', openReview);
+    }, [entries]);
     async function restore(symbol: string) {
         if (pending) return;
         setPending(true); setMessage('');
@@ -53,7 +64,7 @@ export default function ResearchArchive({ entries, alerts }: { entries: Watchlis
                 </div>
                 <p className="whitespace-pre-wrap break-words text-sm">观察理由：{entry.note || '未记录'}</p>
                 <p className="whitespace-pre-wrap break-words text-sm">失效条件：{entry.invalidation || '未记录'}</p>
-                <p className="text-xs text-faint">关联预警 {related.length} 条；触发和投递详情见价格预警区。</p>
+                <p className="text-xs text-faint">{alertsAvailable ? `关联预警 ${related.length} 条；触发和投递详情见价格预警区。` : '预警读取失败，关联数量未知；不能据此判断已停用。请刷新后核对。'}</p>
                 {related.map(alert => <div key={alert._id} className="flex flex-wrap items-center gap-2 text-sm">
                     <span>{alert.symbol} · {alert.triggered ? '已触发，保留投递记录' : alert.active === false ? '已停用' : alert.expiresAt && Date.parse(alert.expiresAt) <= Date.now() ? '已过期' : '继续独立检测（依赖服务配置）'}</span>
                     {!alert.triggered && alert.active !== false && <button type="button" className="btn min-h-12" disabled={pending} onClick={() => void stop(alert._id)} aria-label={`停用归档标的 ${alert.symbol} 预警`}>停用预警</button>}

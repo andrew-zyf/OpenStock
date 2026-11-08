@@ -26,6 +26,24 @@ export type ObservationRevision = {
     observation: ObservationState;
 };
 
+export type ResearchEvidenceReference = { kind: 'fact' | 'comparison'; id: string };
+
+export function validateEvidenceReferences(value: unknown): ResearchEvidenceReference[] {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > 10) throw new Error('研究证据引用最多 10 条');
+    const seen = new Set<string>();
+    return value.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)
+            || Object.keys(item).some(key => !['kind', 'id'].includes(key))
+            || !['fact', 'comparison'].includes(item.kind) || typeof item.id !== 'string'
+            || !/^[A-Za-z0-9_-]{1,100}$/.test(item.id)) throw new Error('无效的研究证据引用');
+        const key = `${item.kind}:${item.id}`;
+        if (seen.has(key)) throw new Error('研究证据引用不能重复');
+        seen.add(key);
+        return { kind: item.kind, id: item.id };
+    });
+}
+
 export type WatchlistReviewInput = {
     tradingDate: string;
     hypothesis: string;
@@ -33,6 +51,7 @@ export type WatchlistReviewInput = {
     conclusion: string;
     verificationType: 'price' | 'fact' | 'judgment';
     evidenceURLs?: string[];
+    evidenceReferences?: ResearchEvidenceReference[];
     nextReviewDate?: string | null;
     correctionOf?: string;
     clientRequestId: string;
@@ -74,7 +93,7 @@ export function observationState(entry: ObservationState | WatchlistEntry): Obse
 export function validateReviewInput(input: unknown): WatchlistReviewInput & { evidenceURLs: string[] } {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('无效的复核条目');
     const values = input as Record<string, unknown>;
-    if (Object.keys(values).some((key) => !['tradingDate', 'hypothesis', 'changes', 'conclusion', 'verificationType', 'evidenceURLs', 'nextReviewDate', 'correctionOf', 'clientRequestId'].includes(key))) {
+    if (Object.keys(values).some((key) => !['tradingDate', 'hypothesis', 'changes', 'conclusion', 'verificationType', 'evidenceURLs', 'evidenceReferences', 'nextReviewDate', 'correctionOf', 'clientRequestId'].includes(key))) {
         throw new Error('无效的复核字段');
     }
     if (!isMarketDate(values.tradingDate)) throw new Error('请选择有效的交易日期（YYYY-MM-DD）');
@@ -94,11 +113,13 @@ export function validateReviewInput(input: unknown): WatchlistReviewInput & { ev
         if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('证据链接须为 HTTP/HTTPS 地址');
         return url.href;
     });
+    const evidenceReferences = validateEvidenceReferences(values.evidenceReferences);
     return {
         tradingDate: values.tradingDate, hypothesis: (values.hypothesis as string).trim(),
         changes: (values.changes as string).trim(), conclusion: (values.conclusion as string).trim(),
         verificationType: values.verificationType as WatchlistReviewInput['verificationType'],
         evidenceURLs, clientRequestId: values.clientRequestId,
+        ...(evidenceReferences.length ? { evidenceReferences } : {}),
         ...(values.correctionOf ? { correctionOf: values.correctionOf as string } : {}),
         ...(values.nextReviewDate !== undefined ? { nextReviewDate: values.nextReviewDate as string | null } : {}),
     };
@@ -118,6 +139,7 @@ export function reviewRequest(entry: WatchlistReview): WatchlistReviewInput {
         tradingDate: entry.tradingDate, hypothesis: entry.hypothesis, changes: entry.changes,
         conclusion: entry.conclusion, verificationType: entry.verificationType,
         evidenceURLs: entry.evidenceURLs, clientRequestId: entry.clientRequestId,
+        ...(entry.evidenceReferences?.length ? { evidenceReferences: entry.evidenceReferences } : {}),
         ...(entry.correctionOf ? { correctionOf: entry.correctionOf } : {}),
         ...(entry.nextReviewDate !== undefined ? { nextReviewDate: entry.nextReviewDate } : {}),
     };

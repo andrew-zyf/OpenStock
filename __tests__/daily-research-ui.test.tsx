@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DailyResearchResult } from '@/lib/market/daily-research';
 const mocks = vi.hoisted(() => ({ load: vi.fn(), groups: vi.fn() }));
 vi.mock('@/lib/actions/relative-history.actions', () => ({ getDailyResearch: mocks.load }));
-vi.mock('@/lib/actions/peer-groups.actions', () => ({ getPeerGroups: mocks.groups, createPeerGroup: vi.fn(), deletePeerGroup: vi.fn() }));
-import DailyResearchPanel, { DailyResearchTable } from '@/components/watchlist/DailyResearchPanel';
+vi.mock('@/lib/actions/peer-groups.actions', () => ({ getPeerGroupsResult: mocks.groups, createPeerGroupResult: vi.fn(), deletePeerGroupResult: vi.fn() }));
+import DailyResearchPanel, { ComparisonEvidenceEditor, DailyResearchTable } from '@/components/watchlist/DailyResearchPanel';
 const data: DailyResearchResult = {
     scope: 'group', benchmarkSymbol: '510300.SS', fetchedAt: '2026-11-08T01:00:00Z', commonDates: ['2026-10-01', '2026-10-09'], omittedMembers: [{ symbolId: 'US:AAPL', symbol: 'AAPL' }],
     group: { id: 'abcdef012345678901234567', name: '我的固定组', membershipSavedAt: '2026-11-07T01:00:00Z', members: [{ symbolId: 'SZSE:000001.SZ', symbol: '000001.SZ' }] },
@@ -29,6 +29,26 @@ describe('daily research disclosure and on-demand UI', () => {
         expect(html).toContain('role="region"'); expect(html).toContain('tabindex="0"'); expect(html).toContain('overflow-auto');
         for (const disclosure of ['2026-11-07T01:00:00Z', '不代表当时成员或历史行业排名', 'US:AAPL', '+10.00%', '差 5.00 个百分点', '需 21 个共同完成日收盘点', 'qfqday', 'CNY', '2026-10-05', '标的 100 / 基准 200', '2026-11-06: 1000', '缺失不填 0']) expect(html).toContain(disclosure);
         expect(html).toContain('0 股'); expect(html).toContain('0.00 倍'); expect(html).not.toContain('<svg');
+    });
+    it('pins edits to the displayed draft and asks explicitly before keeping an older comparison', () => {
+        const initial = { ...data, draft: { id: 'old-issued-id', expiresAt: '2026-11-08T01:30:00Z' } };
+        const html = renderToStaticMarkup(createElement(ComparisonEvidenceEditor, { initial, currentVersion: 'new-issued-id', onSaved: vi.fn(), onClose: vi.fn() }));
+        expect(html).toContain('对照范围、成员或读取结果已在编辑期间改变');
+        expect(html).toContain('仍保存'); expect(html).toContain('旧对照版本'); expect(html).toContain('name="confirmOldResult"');
+        expect(html).not.toMatch(/name="confirmOldResult"[^>]*checked/);
+        expect(html).toContain('本次结论／证据说明（必填）'); expect(html).toContain('name="caption"');
+        expect(html).toContain('不会再次取行情'); expect(html).toContain('2026-11-08T01:30:00Z');
+        expect(html).toContain('读取此成员的原判断版本'); expect(html).toContain('查看将保存的固定对照');
+        expect(html).toContain('标的 100 / 基准 200'); expect(html).toContain('qfqday');
+    });
+    it('exposes manual themes and saved evidence as on-demand existing research flows', () => {
+        const html = renderToStaticMarkup(createElement(DailyResearchPanel, { watchedSymbols: [] }));
+        expect(html).toContain('手动研究主题（允许跨市场）'); expect(html).toContain('name="purpose"');
+        expect(html).toContain('仅统计各市场成员数'); expect(html).toContain('读取已保存依据'); expect(html).toContain('含归档与独立保留');
+    });
+    it('keeps saved theme membership explicitly manual when its original group is no longer selected', () => {
+        const html = renderToStaticMarkup(createElement(DailyResearchTable, { data: { ...data, group: { ...data.group!, purpose: 'theme' } } }));
+        expect(html).toContain('手动研究主题：我的固定组'); expect(html).toContain('CN 1 只'); expect(html).toContain('主题归属由本人指定');
     });
     it('keeps missing latest volume distinct from a genuine reported zero', () => {
         const missing = { ...data, rows: data.rows.map(row => ({ ...row, volume: { ...row.volume, status: 'unavailable' as const, volume: undefined, ratio: undefined, missingDates: ['2026-11-07'], reason: '完整日成交量缺失' } })) };

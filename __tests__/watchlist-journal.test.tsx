@@ -42,6 +42,16 @@ describe('review journal form and append payload', () => {
         expect(input).not.toHaveProperty('sourceQuote');
         expect(reviewInputFromDraft({ ...draft, nextReviewDate: '2026-11-10' }, 'next-id').nextReviewDate).toBe('2026-11-10');
     });
+    it('carries retained evidence through a correction payload and renders owner-checked lookup controls', () => {
+        const refs = [{ kind: 'fact' as const, id: 'fact-one' }, { kind: 'comparison' as const, id: 'abcdefabcdefabcdefabcdef' }];
+        expect(reviewInputFromDraft(draft, 'evidence-retry', 'review-a', refs)).toMatchObject({ evidenceReferences: refs, correctionOf: 'review-a', clientRequestId: 'evidence-retry' });
+        expect(reviewInputFromDraft(draft, 'legacy')).not.toHaveProperty('evidenceReferences');
+        const html = renderToStaticMarkup(<JournalRecord entry={{ ...review, evidenceReferences: refs }} symbol="AAPL" />);
+        expect(html).toContain('已留存研究证据');
+        expect(html).toContain('fact-one');
+        expect(html).toContain('读取已保存的原始证据');
+        expect(html).not.toContain('原始字段与样本');
+    });
     it.each(['javascript:alert(1)', 'data:text/html,hello', 'file:///Users/test', 'https://user:password@example.com', '//example.com'])('does not expose unsafe evidence as a clickable link: %s', value => {
         expect(safeEvidenceURL(value)).toBeUndefined();
         expect(validateReviewDraft({ ...draft, evidenceURLs: value })).toHaveProperty('evidenceURLs');

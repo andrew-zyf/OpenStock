@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResearchEventHistory, ResearchChangeState } from '@/database/models/research-change.model';
 import type { MarketEvent } from '@/lib/market/events';
 import type { ObservationRevision, WatchlistReview } from '@/lib/watchlist-review';
+import type { ManualPlan } from '@/lib/manual-plan';
+import type { ResearchFactRecord } from '@/lib/research-facts';
 const mocks = vi.hoisted(() => ({ findOne: vi.fn(), create: vi.fn(), updateOne: vi.fn() }));
 vi.mock('@/database/models/research-change.model', () => ({ ResearchEventHistoryRecord: mocks }));
 import {
-    applyResearchChangeState, eventResearchChanges, journalResearchChanges, observeAutomaticEvents,
+    applyResearchChangeState, eventResearchChanges, journalResearchChanges, manualPlanResearchChanges, manualFactResearchChanges, observeAutomaticEvents, researchChangeCategory,
     validateResearchChangeState, type ResearchJournalRecord,
 } from '@/lib/market/research-changes';
 
@@ -107,6 +109,52 @@ describe('actual source event version journal', () => {
         const ignored: ResearchChangeState = { userId: 'user-a', changeId: changes[0].id, status: 'ignored', revision: 1, updatedAt: later(2) };
         expect(applyResearchChangeState(changes[0], ignored, later(3)).status).toBe('ignored');
         expect(applyResearchChangeState(changes[1], undefined, later(3)).status).toBe('pending');
+    });
+});
+
+const plan: ManualPlan = { id: 'independent-plan', symbol: 'AAPL', waitingCondition: '等待财报', invalidation: '利润下滑', nextAction: '核对利润',
+    checkDate: '2026-11-08', manualState: 'waiting', scheduleRevision: 1, version: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' };
+describe('independent manual plan due versions', () => {
+    it('uses each market local date, including US before midnight and Asian markets after midnight', () => {
+        expect(manualPlanResearchChanges([plan], baseTime)).toEqual([]);
+        for (const symbol of ['600519.SH', '00700.HK', '2330.TW', '6488.TWO']) {
+            expect(manualPlanResearchChanges([{ ...plan, symbol }], baseTime)).toHaveLength(1);
+        }
+        expect(manualPlanResearchChanges([plan], new Date('2026-11-08T05:00:00.000Z'))).toHaveLength(1);
+    });
+    it('keeps identity and real recorded time across refresh, text edits, and unrelated plan revisions', () => {
+        const original = { ...plan, checkDate: '2026-11-07' };
+        const [first] = manualPlanResearchChanges([original], baseTime);
+        const [edited] = manualPlanResearchChanges([{ ...original, version: 10, nextAction: '追加文字', updatedAt: later(100).toISOString() }], later(200));
+        expect(edited.id).toBe(first.id); expect(edited.discoveredAt).toBe(plan.createdAt);
+        expect(edited.after?.nextAction).toBe('追加文字');
+        expect(researchChangeCategory(first)).toBe('plan-due');
+        const state: ResearchChangeState = { userId: 'user-a', changeId: first.id, status: 'processed', revision: 1, updatedAt: baseTime };
+        expect(applyResearchChangeState(edited, state, later(200)).status).toBe('processed');
+    });
+    it('rescheduling back to the same date is a distinct version and completed/cancelled/future plans stay out', () => {
+        const original = { ...plan, checkDate: '2026-11-07' };
+        const [first] = manualPlanResearchChanges([original], baseTime);
+        const [rescheduled] = manualPlanResearchChanges([{ ...original, scheduleRevision: 3 }], baseTime);
+        expect(first.id).not.toBe(rescheduled.id);
+        expect(manualPlanResearchChanges([{ ...original, manualState: 'completed' }, { ...original, manualState: 'cancelled' }, { ...plan, checkDate: '2026-11-09' }], baseTime)).toEqual([]);
+        expect(validateResearchChangeState({ id: first.id, status: 'processed', expectedStateVersion: 0 }, baseTime).id).toBe(first.id);
+    });
+});
+describe('manual fact concrete versions', () => {
+    it('retains source text, real registration time, version and manual provenance without claiming verification', () => {
+        const fact: ResearchFactRecord = { id: 'fact-a', rootId: 'fact-a', version: 1, symbol: 'AAPL', market: 'us', exchangeId: 'US',
+            title: '财报事实', factText: '原文', factType: 'earnings', reportingPeriod: '2026Q3', sourceUrl: 'https://example.com/report',
+            sourcePublishedAt: null, assessment: 'undetermined', assessmentNote: '', observationSnapshot: null,
+            correctionOf: null, correctionReason: null, registrationMethod: 'manual', createdAt: baseTime.toISOString() };
+        const [first] = manualFactResearchChanges([fact]);
+        const [correction] = manualFactResearchChanges([{ ...fact, id: 'fact-b', version: 2, correctionOf: fact.id }]);
+        expect(first).toMatchObject({ factId: fact.id, source: '人工登记事实（未经自动核验）', sourceUrl: fact.sourceUrl, discoveredAt: fact.createdAt,
+            after: { factText: '原文', reportingPeriod: '2026Q3', sourcePublishedAt: null, version: 1 } });
+        expect(correction.id).not.toBe(first.id); expect(correction.after?.correctionOf).toBe(fact.id);
+        expect(manualFactResearchChanges([fact])[0].id).toBe(first.id);
+        expect(researchChangeCategory(first)).toBe('external-fact');
+        expect(validateResearchChangeState({ id: correction.id, status: 'ignored', expectedStateVersion: 0 }, baseTime).id).toBe(correction.id);
     });
 });
 

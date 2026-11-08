@@ -4,21 +4,38 @@ import type { MarketEvent } from '@/lib/market/events';
 import { exchangeDateForSymbol, validCalendarDate } from '@/lib/market/dates';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
 import { observationState, type ObservationRevision, type WatchlistJournalEntry } from '@/lib/watchlist-review';
+import type { ManualPlan } from '@/lib/manual-plan';
+import type { ResearchFactRecord } from '@/lib/research-facts';
 
+export const RESEARCH_CHANGE_CATEGORIES = ['external-fact', 'own-edit', 'plan-due', 'review-due'] as const;
+export type ResearchChangeCategory = typeof RESEARCH_CHANGE_CATEGORIES[number];
 export type ResearchChange = {
-    id: string; kind: 'event-date' | 'observation' | 'review-due'; symbol: string; title: string;
-    discoveredAt: string; source: string; sourceUrl?: string;
+    id: string; kind: 'event-date' | 'observation' | 'review-due' | 'manual-plan-due' | 'manual-fact'; symbol: string; title: string;
+    discoveredAt: string; source: string; sourceUrl?: string; planId?: string; factId?: string;
     before?: Record<string, unknown>; after?: Record<string, unknown>; dueDate?: string;
     status: ResearchChangeStatus; snoozedUntil?: string; stateVersion: number;
 };
-export type ResearchChangeInbox = { entries: ResearchChange[]; limit: number; truncated: boolean; limitations: string[] };
+export type ResearchChangeReadIssue = { scope: 'research' | 'events' | 'plans' | 'facts' | 'handling'; message: string };
+export type ResearchChangeInbox = {
+    entries: ResearchChange[]; limit: number; truncated: boolean; limitations: string[];
+    readStatus: 'read' | 'partial' | 'read-failed'; readIssues: ResearchChangeReadIssue[];
+};
+export function researchChangeCategory(entry: Pick<ResearchChange, 'kind'>): ResearchChangeCategory {
+    switch (entry.kind) {
+        case 'event-date': case 'manual-fact': return 'external-fact';
+        case 'observation': return 'own-edit';
+        case 'manual-plan-due': return 'plan-due';
+        case 'review-due': return 'review-due';
+    }
+}
 export type ResearchChangeStateInput = { id: string; status: ResearchChangeStatus; snoozedUntil?: string; expectedStateVersion: number };
 export const CHANGE_LIMITS = { entries: 100, histories: 200, versions: 100, journalTail: 101, records: 100, candidates: 30_100 } as const;
 export const CHANGE_LIMITATIONS = [
     '仅记录实际取回的 A股预约披露日期版本；首次观察建立基线，来源失败、空结果、离开日程窗口或移出自选均不视为撤回。',
     'TWSE 当前预告没有经验证的稳定事件标识，仅展示日程，不推断改期或撤回；行情可用性待办尚未接入。',
     '本收件箱不重新请求行情或事件来源，也不判断来源当前健康状态；空列表只表示已留存范围内无待处理项，不能解释为没有变化或数据可用。',
-    '收件箱仅覆盖活动研究，最多读取 200 个事件的各 100 个最近版本、100 条研究的各 101 条最近历史；超限显示截取提示。',
+    '观点与复核日期仅覆盖活动研究；独立人工计划、人工事实卡片按账户读取，不受自选或归档影响。最多读取 200 个事件的各 100 个最近版本、100 条研究的各 101 条最近历史、100 条到期计划与 50 张最近事实卡片；超限显示截取提示。',
+    '人工事实卡片是用户登记的来源与判断，未经自动核验；来源链接不代表系统已核实事实或观点。资料不可用的持续事件与恢复记录尚未接入。',
 ];
 function changeId(kind: ResearchChange['kind'], identity: unknown): string {
     return `${kind}:${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`;
@@ -112,6 +129,24 @@ export function journalResearchChanges(records: ResearchJournalRecord[], now: Da
     }
     return [...new Map(result.map((entry) => [entry.id, entry])).values()];
 }
+export function manualPlanResearchChanges(plans: ManualPlan[], now: Date): ResearchChange[] {
+    return plans.filter((plan) => plan.manualState === 'waiting' && validCalendarDate(plan.checkDate)
+        && plan.checkDate <= exchangeDateForSymbol(plan.symbol, now)).map((plan) => pending({
+        id: changeId('manual-plan-due', [plan.id, plan.scheduleRevision]), kind: 'manual-plan-due',
+        symbol: identifyMarketAndCode(plan.symbol).normalizedSymbol, title: '人工计划待核查', planId: plan.id,
+        dueDate: plan.checkDate, discoveredAt: plan.createdAt, source: '本人保存的人工计划（市场当地检查日期）',
+        after: { checkDate: plan.checkDate, waitingCondition: plan.waitingCondition, invalidation: plan.invalidation, nextAction: plan.nextAction },
+    }));
+}
+export function manualFactResearchChanges(facts: ResearchFactRecord[]): ResearchChange[] {
+    return facts.map((fact) => pending({
+        id: changeId('manual-fact', [fact.id, fact.version]), kind: 'manual-fact', factId: fact.id,
+        symbol: identifyMarketAndCode(fact.symbol).normalizedSymbol, title: fact.title,
+        discoveredAt: fact.createdAt, source: '人工登记事实（未经自动核验）', sourceUrl: fact.sourceUrl,
+        after: { factText: fact.factText, reportingPeriod: fact.reportingPeriod, factType: fact.factType,
+            sourcePublishedAt: fact.sourcePublishedAt, version: fact.version, correctionOf: fact.correctionOf },
+    }));
+}
 export function applyResearchChangeState(entry: ResearchChange, state: ResearchChangeState | undefined, now: Date): ResearchChange {
     if (!state) return entry;
     const snoozedUntil = state.snoozedUntil?.toISOString();
@@ -122,7 +157,7 @@ export function sortResearchChanges(entries: ResearchChange[]): ResearchChange[]
     return entries.sort((a, b) => b.discoveredAt.localeCompare(a.discoveredAt) || a.id.localeCompare(b.id));
 }
 export function validateResearchChangeState(input: ResearchChangeStateInput, now: Date): ResearchChangeStateInput {
-    if (!input || typeof input.id !== 'string' || !/^(event-date|observation|review-due):[a-f0-9]{64}$/.test(input.id)
+    if (!input || typeof input.id !== 'string' || !/^(event-date|observation|review-due|manual-plan-due|manual-fact):[a-f0-9]{64}$/.test(input.id)
         || !['pending', 'processed', 'snoozed', 'ignored'].includes(input.status)
         || !Number.isSafeInteger(input.expectedStateVersion) || input.expectedStateVersion < 0) throw new Error('待办处理请求无效');
     if (input.status === 'snoozed') {

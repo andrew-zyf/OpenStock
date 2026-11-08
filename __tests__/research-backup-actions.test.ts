@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseResearchBackup, researchBackupDigest, researchImportId, type ResearchBackup } from '@/lib/research-backup';
 import { mergeWatchlistRecords, type SavedWatchlistRecord } from '@/lib/watchlist-observation';
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), lifecycle: vi.fn(), researchFind: vi.fn(), eventFind: vi.fn(), alertFind: vi.fn(), researchInsert: vi.fn(), eventInsert: vi.fn(), revalidate: vi.fn(), transaction: vi.fn(), endSession: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), connect: vi.fn(), lifecycle: vi.fn(), researchFind: vi.fn(), eventFind: vi.fn(), alertFind: vi.fn(), researchInsert: vi.fn(), eventInsert: vi.fn(), revalidate: vi.fn(), transaction: vi.fn(), endSession: vi.fn(), extra: Object.fromEntries(['books', 'manualPlans', 'planSchedules', 'peerGroups', 'eventHistories', 'changeStates', 'factCards', 'comparisons'].map((name) => [name, { find: vi.fn(), insertMany: vi.fn() }])) }));
 vi.mock('@/database/mongoose', () => ({ connectToDatabase: mocks.connect }));
 vi.mock('@/lib/better-auth/auth', () => ({ requireUserId: mocks.auth }));
 vi.mock('@/lib/watchlist-lifecycle', async (importOriginal) => ({ ...await importOriginal<Record<string, unknown>>(), withWatchlistLifecycle: mocks.lifecycle }));
@@ -9,8 +9,15 @@ vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidate }));
 vi.mock('@/database/models/watchlist.model', () => ({ Watchlist: { find: mocks.researchFind, insertMany: mocks.researchInsert } }));
 vi.mock('@/database/models/market-event.model', () => ({ MarketEventRecord: { find: mocks.eventFind, insertMany: mocks.eventInsert } }));
 vi.mock('@/database/models/alert.model', () => ({ Alert: { find: mocks.alertFind } }));
+vi.mock('@/database/models/manual-plan.model', () => ({ ManualPlanBook: mocks.extra.books, ManualPlanRecord: mocks.extra.manualPlans, ManualPlanSchedule: mocks.extra.planSchedules }));
+vi.mock('@/database/models/peer-group.model', () => ({ PeerGroupRecord: mocks.extra.peerGroups }));
+vi.mock('@/database/models/research-change.model', () => ({ ResearchEventHistoryRecord: mocks.extra.eventHistories, ResearchChangeStateRecord: mocks.extra.changeStates }));
+vi.mock('@/database/models/research-fact.model', () => ({ ResearchFact: mocks.extra.factCards }));
+vi.mock('@/database/models/research-comparison.model', () => ({ ResearchComparisonRecord: mocks.extra.comparisons }));
 import { exportResearchBackup, importResearchBackup, previewResearchBackupImport, exportResearchBackupForUI, importResearchBackupForUI, previewResearchBackupImportForUI } from '@/lib/actions/research-backup.actions';
 import { WatchlistLifecycleError } from '@/lib/watchlist-lifecycle';
+import { v2Fixture, planId, rawId, factId, comparisonId, backupTime, stateId } from './fixtures/research-backup-v2';
+import { WORKBENCH_COLLECTIONS, type ResearchBackupV2 } from '@/lib/research-backup';
 const time = '2026-11-08T01:00:00.000Z';
 const snapshot = { price: 100, currency: 'HKD', source: 'source', asOf: time, fetchedAt: time, priceBasis: 'last-trade', adjustment: 'unadjusted' } as const;
 function fixture(): ResearchBackup {
@@ -25,13 +32,18 @@ function fixture(): ResearchBackup {
     ], manualEvents: [{ id: '333333333333333333333333', symbol: '0700.HK', title: '已撤销事件', date: '2026-11-08', kind: 'other', clientRequestId: 'manual-request', createdAt: time, cancelledAt: time }], alertReferences: { referenceOnly: true, alerts: [] } };
 }
 type Row = Record<string, unknown>;
-let research: Row[]; let events: Row[]; let alerts: Row[];
+let research: Row[]; let events: Row[]; let alerts: Row[]; let extraRows: Record<string, Row[]>;
 function query(rows: Row[]) {
     const chain = { select: vi.fn(() => chain), sort: vi.fn(() => chain), session: vi.fn(() => chain), lean: vi.fn(async () => rows) };
     return chain;
 }
 beforeEach(() => {
     vi.clearAllMocks(); research = []; events = []; alerts = [];
+    extraRows = Object.fromEntries(Object.keys(mocks.extra).map((name) => [name, []]));
+    for (const [name, model] of Object.entries(mocks.extra)) {
+        model.find.mockImplementation(({ userId }) => query(extraRows[name].filter((row) => row.userId === userId)));
+        model.insertMany.mockImplementation(async (rows: Row[]) => { extraRows[name].push(...rows); });
+    }
     mocks.auth.mockResolvedValue('current-owner');
     mocks.lifecycle.mockImplementation(async (_userId, _intent, run: () => Promise<unknown>) => run());
     mocks.researchFind.mockImplementation(({ userId }) => query(research.filter((row) => row.userId === userId)));
@@ -40,8 +52,8 @@ beforeEach(() => {
     mocks.researchInsert.mockImplementation(async (rows: Row[]) => { research.push(...rows); });
     mocks.eventInsert.mockImplementation(async (rows: Row[]) => { events.push(...rows); });
     mocks.transaction.mockImplementation(async (run: () => Promise<void>) => {
-        const oldResearch = [...research]; const oldEvents = [...events];
-        try { await run(); } catch (error) { research = oldResearch; events = oldEvents; throw error; }
+        const oldResearch = [...research]; const oldEvents = [...events]; const oldExtra = structuredClone(extraRows);
+        try { await run(); } catch (error) { research = oldResearch; events = oldEvents; extraRows = oldExtra; throw error; }
     });
     mocks.connect.mockResolvedValue({ startSession: async () => ({ withTransaction: mocks.transaction, endSession: mocks.endSession }) });
 });
@@ -236,5 +248,76 @@ describe('authenticated research backup actions', () => {
         });
         const result = await importResearchBackup(json, digest);
         expect(result.research[0].status).toBe('skip-existing'); expect(research).toHaveLength(1); expect(mocks.researchInsert).not.toHaveBeenCalled();
+    });
+});
+
+describe('JSON v2 transactional workbench actions', () => {
+    it('restores all saved collections under one transaction and rewrites every concrete reference to this owner', async () => {
+        const source = v2Fixture(); const json = JSON.stringify(source);
+        const result = await importResearchBackup(json, researchBackupDigest(source));
+        expect(result.workbench?.every((row) => row.status === 'import')).toBe(true);
+        expect(mocks.transaction).toHaveBeenCalledTimes(1);
+        for (const name of WORKBENCH_COLLECTIONS) {
+            expect(extraRows[name]).toHaveLength(source[name].length);
+            expect(extraRows[name].every((row) => row.userId === 'current-owner')).toBe(true);
+            expect(mocks.extra[name].insertMany.mock.calls[0][1]).toMatchObject({ session: expect.anything(), ordered: true });
+        }
+        const importedId = String(research[0]._id);
+        expect(importedId).not.toBe(rawId);
+        expect(extraRows.factCards[0]).toMatchObject({ id: factId, observationSnapshot: { recordId: importedId, revisionId: 'revision-1' }, createFingerprint: source.factCards[0].createFingerprint });
+        const review = (research[0].journal as Row[])[1];
+        expect(review.evidenceReferences).toEqual([{ kind: 'fact', id: factId }, { kind: 'comparison', id: researchImportId('current-owner', comparisonId) }]);
+        expect(extraRows.changeStates[0].changeId).toBe(stateId('review-due', [importedId, 'AAPL', '2026-11-08', backupTime]));
+        const replay = await importResearchBackup(json, researchBackupDigest(source));
+        expect(replay.workbench?.every((row) => row.status !== 'import')).toBe(true);
+        expect(extraRows.factCards).toHaveLength(1); expect(research).toHaveLength(1);
+        // An export after restore must itself pass full graph validation.
+        const exported = parseResearchBackup(await exportResearchBackup());
+        expect(exported.version).toBe(2);
+        if (exported.version === 2) {
+            expect(exported.capture.collections.eventHistories).toMatchObject({ retainedVersions: 1, unavailableVersions: 104 });
+            expect(exported.capture.collections.changeStates.unresolvedTargets).toBe(0);
+        }
+        await importResearchBackup(JSON.stringify(exported), researchBackupDigest(exported));
+        expect(extraRows.comparisons).toHaveLength(1); expect(extraRows.factCards).toHaveLength(1);
+    });
+    it('rolls back research, plans, schedules, groups, event/state and fact writes after the final evidence write fails', async () => {
+        const source = v2Fixture(); mocks.extra.comparisons.insertMany.mockRejectedValueOnce(new Error('saved evidence insert failed'));
+        await expect(importResearchBackup(JSON.stringify(source), researchBackupDigest(source))).rejects.toThrow('saved evidence insert failed');
+        expect(research).toEqual([]); expect(events).toEqual([]);
+        for (const name of WORKBENCH_COLLECTIONS) expect(extraRows[name]).toEqual([]);
+        expect(mocks.endSession).toHaveBeenCalledTimes(1);
+    });
+    it('rechecks stable owner identities at commit and skips all related evidence without overwriting current drafts', async () => {
+        const source = v2Fixture(); const json = JSON.stringify(source); const plan = await previewResearchBackupImport(json);
+        extraRows.factCards.push({ ...source.factCards[0], userId: 'current-owner', factText: '当前账户已有原文' });
+        const result = await importResearchBackup(json, plan.digest);
+        expect(result.research[0].status).toBe('skip-related');
+        expect(extraRows.factCards[0].factText).toBe('当前账户已有原文');
+        expect(mocks.researchInsert).not.toHaveBeenCalled(); expect(mocks.extra.comparisons.insertMany).not.toHaveBeenCalled();
+        expect(extraRows.eventHistories).toHaveLength(1); // Separate evidence group remains recoverable.
+    });
+    it('exports all terminal legacy/record plans and retained history with honest source counts without migrating books', async () => {
+        const source = v2Fixture(); const original = { ...source.manualPlans[0] }; delete original.observationVersionId; delete original.observationSnapshot;
+        original.createFingerprint = JSON.stringify(['AAPL', '核对', '失效', '行动', '2026-11-07']);
+        extraRows.books = [{ userId: 'current-owner', plans: [{ ...original, nextAction: '旧书原文' }] }];
+        extraRows.manualPlans = Array.from({ length: 125 }, (_, index) => ({ ...original, id: index === 0 ? planId : `aaaaaaaa-aaaa-4aaa-8aaa-${index.toString(16).padStart(12, '0')}`, clientRequestId: `plan-request-${index}`, userId: 'current-owner' }));
+        extraRows.planSchedules = extraRows.manualPlans.map((row) => ({ ...source.planSchedules[0], planId: row.id, userId: 'current-owner' }));
+        const exported = parseResearchBackup(await exportResearchBackup()) as ResearchBackupV2;
+        expect(exported.manualPlans).toHaveLength(125); expect(exported.manualPlans.find((row) => row.id === planId)!.nextAction).toBe('行动');
+        expect(exported.capture.collections.manualPlans).toMatchObject({ count: 125, sourceCount: 126, schemaVersion: 1 });
+        expect(exported.planSchedules).toHaveLength(125);
+        expect(extraRows.books[0].plans).toEqual([expect.objectContaining({ nextAction: '旧书原文' })]);
+        for (const model of Object.values(mocks.extra)) expect(model.insertMany).not.toHaveBeenCalled();
+    });
+    it('shows read-only capability evidence before confirmation for standalone and replica-set deployments', async () => {
+        const source = v2Fixture(); const session = { withTransaction: mocks.transaction, endSession: mocks.endSession };
+        const command = vi.fn().mockResolvedValue({ isWritablePrimary: true });
+        mocks.connect.mockResolvedValue({ connection: { db: { admin: () => ({ command }) } }, startSession: async () => session });
+        const standalone = await previewResearchBackupImport(JSON.stringify(source));
+        expect(standalone.capability).toMatchObject({ status: 'unsupported', message: expect.stringContaining('单机') });
+        expect(command).toHaveBeenCalledWith({ hello: 1 }); expect(mocks.transaction).not.toHaveBeenCalled();
+        command.mockResolvedValue({ setName: 'rs0' });
+        expect((await previewResearchBackupImport(JSON.stringify(source))).capability?.status).toBe('supported');
     });
 });

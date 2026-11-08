@@ -19,6 +19,7 @@ import { compareDailyQuotes, getBenchmarkOptions } from "@/lib/market/comparison
 import { alertsEnabled, isRealtime } from "@/lib/market-data";
 import type { getWatchlistData } from "@/lib/actions/finnhub.actions";
 import type { ReviewStatus, WatchlistEntry } from "@/lib/watchlist-observation";
+import { validateEvidenceReferences, type ResearchEvidenceReference } from "@/lib/watchlist-review";
 
 type Row = Awaited<ReturnType<typeof getWatchlistData>>[number];
 type MarketFilter = 'all' | 'us' | 'cn' | 'hk' | 'tw';
@@ -59,6 +60,7 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
     const [sortAsc, setSortAsc] = useState(false);
     const [editing, setEditing] = useState<string[]>([]);
     const [journals, setJournals] = useState<string[]>([]);
+    const [journalEvidence, setJournalEvidence] = useState<Record<string, ResearchEvidenceReference[]>>({});
     const [dueOnly, setDueOnly] = useState(false);
     const [now, setNow] = useState<Date | null>(null);
     useEffect(() => {
@@ -74,13 +76,34 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
     useEffect(() => setBaseRows(initialRows), [initialRows]);
     useEffect(() => {
         function openReview(event: Event) {
-            const symbol = (event as CustomEvent<string>).detail;
+            const detail = (event as CustomEvent).detail;
+            const rawSymbol = typeof detail === 'string' ? detail : detail?.symbol;
+            if (typeof rawSymbol !== 'string') return;
+            const symbol = identifyMarketAndCode(rawSymbol).normalizedSymbol;
             if (!initialRows.some(row => row.symbol === symbol)) return;
+            if (typeof detail === 'object' && (detail?.evidenceReference || Array.isArray(detail?.evidenceReferences))) {
+                try {
+                    const incoming = detail.evidenceReference ? [detail.evidenceReference] : detail.evidenceReferences;
+                    const checked = incoming.flatMap((value: unknown) => validateEvidenceReferences([value]));
+                    const references = [...new Map(checked.map((reference: ResearchEvidenceReference) => [`${reference.kind}:${reference.id}`, reference])).values()] as ResearchEvidenceReference[];
+                    // Each dispatch adds to the mounted draft; it never replaces typed text.
+                    setJournalEvidence(current => ({ ...current, [symbol]: references }));
+                } catch { return; }
+            }
             setJournals(current => current.includes(symbol) ? current : [...current, symbol]);
-            requestAnimationFrame(() => document.getElementById(`${id}-journal-${symbol.replace(/[^a-zA-Z0-9]/g, '-')}`)?.scrollIntoView({ block: 'start' }));
+            requestAnimationFrame(() => {
+                const panel = document.getElementById(`${id}-journal-${symbol.replace(/[^a-zA-Z0-9]/g, '-')}`);
+                if (!panel || panel.closest('[hidden]')) return;
+                panel.querySelector<HTMLElement>('h3[tabindex="-1"]')?.focus({ preventScroll: true });
+                panel.scrollIntoView({ block: 'start' });
+            });
         }
         window.addEventListener('openstock:open-review', openReview);
-        return () => window.removeEventListener('openstock:open-review', openReview);
+        window.addEventListener('openstock:queued-review', openReview);
+        return () => {
+            window.removeEventListener('openstock:open-review', openReview);
+            window.removeEventListener('openstock:queued-review', openReview);
+        };
     }, [initialRows, id]);
 
     const liveRows = baseRows.map((row) => {
@@ -98,6 +121,10 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
     const queue = now ? buildReviewQueue(baseRows, Object.fromEntries(baseRows.map(row => [row.symbol, rowQuote(row)])), new Date()) : [];
     const dueSymbols = new Set(queue.filter(item => item.dueDate).map(item => item.symbol));
     const distanceFor = (row: Row) => observationDistance(row.targetPrice, rowQuote(row)?.c);
+    function closeJournal(symbol: string) {
+        setJournals(current => current.filter(item => item !== symbol));
+        setJournalEvidence(current => { const next = { ...current }; delete next[symbol]; return next; });
+    }
     const panelId = (symbol: string, kind: 'editor' | 'journal') => `${id}-${kind}-${symbol.replace(/[^a-zA-Z0-9]/g, '-')}`;
     function openPanel(symbol: string, kind: 'editor' | 'journal') {
         const setter = kind === 'editor' ? setEditing : setJournals;
@@ -270,7 +297,7 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                                 <td className="align-top"><div className="flex flex-wrap items-center justify-end gap-1">
                                     <button type="button" aria-expanded={isEditing} aria-controls={editorId} className="btn text-xs"
                                         onClick={() => isEditing ? setEditing(current => current.filter(symbol => symbol !== row.symbol)) : openPanel(row.symbol, 'editor')}>编辑观察</button>
-                                    <button type="button" aria-expanded={journals.includes(row.symbol)} aria-controls={panelId(row.symbol, 'journal')} className="btn text-xs" onClick={() => journals.includes(row.symbol) ? setJournals(current => current.filter(symbol => symbol !== row.symbol)) : openPanel(row.symbol, 'journal')}>历史 / 追加复核</button>
+                                    <button type="button" aria-expanded={journals.includes(row.symbol)} aria-controls={panelId(row.symbol, 'journal')} className="btn text-xs" onClick={() => journals.includes(row.symbol) ? closeJournal(row.symbol) : openPanel(row.symbol, 'journal')}>历史 / 追加复核</button>
                                     {alertsEnabled && getInstrumentCapabilities(row.symbol).alerts ? (
                                         <CreateAlertModal symbol={row.symbol} currentPrice={row.price} currency={row.currency}>
                                             <button type="button" className="icon-btn" title={`为 ${row.symbol} 设置价格预警`} aria-label={`为 ${row.symbol} 设置价格预警`}><Bell /></button>
@@ -290,7 +317,7 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                 </div>
             ))}
             {baseRows.filter(row => journals.includes(row.symbol)).map(row => <div key={row.symbol} id={panelId(row.symbol, 'journal')} className="min-w-0 p-3">
-                <WatchlistJournal entry={row} onSaved={saved} onClose={() => setJournals(current => current.filter(symbol => symbol !== row.symbol))} />
+                <WatchlistJournal entry={row} evidenceReferences={journalEvidence[row.symbol]} onSaved={saved} onClose={() => closeJournal(row.symbol)} />
             </div>)}
         </div>
     );

@@ -5,8 +5,10 @@ import { verifiedDailyBasis } from './relative-history';
 export const DAILY_RESEARCH_LIMIT = 20;
 export const PEER_GROUP_LIMIT = 10;
 export const VOLUME_BASELINE_DAYS = 20;
+export class PeerGroupInputError extends Error {}
 export type PeerMember = { symbolId: string; symbol: string };
-export type PeerGroup = { id: string; name: string; members: PeerMember[]; membershipSavedAt: string };
+export type PeerGroupPurpose = 'peer' | 'theme';
+export type PeerGroup = { id: string; name: string; purpose?: PeerGroupPurpose; members: PeerMember[]; membershipSavedAt: string };
 export type IntervalReturn = { status: 'unavailable'; reason: string; commonPoints: number; requiredPoints: number } | {
     status: 'available'; intervals: 5 | 20; commonPoints: number; startDate: string; endDate: string;
     stockReturn: number; benchmarkReturn: number; excessPercentagePoints: number;
@@ -30,22 +32,33 @@ export type DailyResearchResult = {
 
 /** Exchange and canonical ticker are both retained, including TWSE vs TPEx. */
 export function canonicalPeerMember(value: string): PeerMember {
-    if (typeof value !== 'string' || value.length > 40) throw new Error('标的代码无效');
+    if (typeof value !== 'string' || value.length > 40) throw new PeerGroupInputError('标的代码无效');
     const prefix = value.match(/^(SSE|SZSE|BSE|HKEX|TWSE|TPEX|US):/)?.[1];
     const ticker = prefix ? value.slice(prefix.length + 1) : value;
     const meta = identifyMarketAndCode(prefix === 'US' || /\.(SS|SH|SZ|BJ|HK|TW|TWO)$/i.test(ticker) ? ticker : value);
-    if (meta.kind === 'unknown' || !/^[A-Z0-9^][A-Z0-9.^-]{0,24}$/.test(meta.normalizedSymbol)) throw new Error('标的代码无效');
+    if (meta.kind === 'unknown' || !/^[A-Z0-9^][A-Z0-9.^-]{0,24}$/.test(meta.normalizedSymbol)) throw new PeerGroupInputError('标的代码无效');
     const symbolId = `${meta.exchangeId}:${meta.normalizedSymbol}`;
     // Explicit exchange prefixes cannot contradict the resolved listing.
-    if (prefix && prefix !== meta.exchangeId) throw new Error('标的身份不一致');
+    if (prefix && prefix !== meta.exchangeId) throw new PeerGroupInputError('标的身份不一致');
     return { symbolId, symbol: meta.normalizedSymbol };
 }
 
-export function validatePeerGroupInput(input: { name: string; symbolIds: string[] }): { name: string; members: PeerMember[] } {
-    if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 60) throw new Error('组名须为 1–60 字');
-    if (!Array.isArray(input.symbolIds) || input.symbolIds.length < 1 || input.symbolIds.length > DAILY_RESEARCH_LIMIT) throw new Error('每组须有 1–20 个标的');
+export function validatePeerGroupInput(input: { name: string; symbolIds: string[]; purpose?: PeerGroupPurpose }): { name: string; purpose: PeerGroupPurpose; members: PeerMember[] } {
+    if (input?.purpose !== undefined && !['peer', 'theme'].includes(input.purpose)) throw new PeerGroupInputError('分组用途无效');
+    if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 60) throw new PeerGroupInputError('组名须为 1–60 字');
+    if (!Array.isArray(input.symbolIds) || input.symbolIds.length < 1 || input.symbolIds.length > DAILY_RESEARCH_LIMIT) throw new PeerGroupInputError('每组须有 1–20 个标的');
     const members = [...new Map(input.symbolIds.map(value => { const member = canonicalPeerMember(value); return [member.symbolId, member] as const; })).values()];
-    return { name: input.name.trim(), members };
+    return { name: input.name.trim(), purpose: input.purpose ?? 'peer', members };
+}
+
+/** Manual research membership counts only; never infer positions or shared issuer identity. */
+export function peerGroupMarketCounts(group: Pick<PeerGroup, 'members'>): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const member of group.members) {
+        const market = identifyMarketAndCode(member.symbol).market;
+        counts[market] = (counts[market] ?? 0) + 1;
+    }
+    return counts;
 }
 
 export function dailySupportReason(symbol: string): string | undefined {

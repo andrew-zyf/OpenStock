@@ -6,53 +6,92 @@ import { ResearchEventHistoryRecord, ResearchChangeStateRecord } from '@/databas
 import { requireUserId } from '@/lib/better-auth/auth';
 import { withWatchlistLifecycle } from '@/lib/watchlist-lifecycle';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
+import { listDueManualPlans } from '@/lib/manual-plan-store';
+import { getResearchFacts } from '@/lib/actions/research-facts.actions';
 import { mergeWatchlistRecords, observationOwner, type SavedWatchlistRecord } from '@/lib/watchlist-observation';
 import {
-    CHANGE_LIMITATIONS, CHANGE_LIMITS, applyResearchChangeState, eventResearchChanges, journalResearchChanges,
-    sortResearchChanges, validateResearchChangeState,
-    type ResearchChange, type ResearchChangeInbox, type ResearchChangeStateInput, type ResearchJournalRecord,
+    CHANGE_LIMITATIONS, CHANGE_LIMITS, RESEARCH_CHANGE_CATEGORIES, applyResearchChangeState, eventResearchChanges, journalResearchChanges,
+    manualFactResearchChanges, manualPlanResearchChanges, researchChangeCategory, sortResearchChanges, validateResearchChangeState,
+    type ResearchChange, type ResearchChangeCategory, type ResearchChangeInbox, type ResearchChangeReadIssue,
+    type ResearchChangeStateInput, type ResearchJournalRecord,
 } from '@/lib/market/research-changes';
 
-async function candidates(userId: string, now: Date): Promise<{ entries: ResearchChange[]; truncated: boolean }> {
-    const raw = await withWatchlistLifecycle(userId, { operation: 'research-changes-journal', readOnly: true }, async () => Watchlist.aggregate([
-        { $match: { userId, archivedAt: null } }, { $sort: { addedAt: -1, _id: 1 } }, { $limit: CHANGE_LIMITS.records + 1 },
-        { $project: { symbol: 1, company: 1, addedAt: 1, observationUpdatedAt: 1, nextReviewDate: 1,
-            group: 1, note: 1, invalidation: 1, targetPrice: 1, reviewStatus: 1, reviewedAt: 1, proximityPercent: 1,
-            journal: { $slice: [{ $ifNull: ['$journal', []] }, -CHANGE_LIMITS.journalTail] },
-            journalTruncated: { $gt: [{ $size: { $ifNull: ['$journal', []] } }, CHANGE_LIMITS.journalTail] } } },
-    ]));
-    const records: (SavedWatchlistRecord & { journalTruncated?: boolean })[] = JSON.parse(JSON.stringify(raw.slice(0, CHANGE_LIMITS.records)));
-    const merged = mergeWatchlistRecords(records);
-    const journals: ResearchJournalRecord[] = merged.map((entry) => {
-        const aliases = records.filter((record) => identifyMarketAndCode(record.symbol).normalizedSymbol === entry.symbol);
-        return { ...entry, _id: observationOwner(aliases)._id,
-            journal: [...new Map(aliases.flatMap((record) => record.journal ?? []).map((revision) => [revision.id, revision])).values()],
-            journalTruncated: aliases.some((record) => record.journalTruncated) };
+type CandidateResult = { entries: ResearchChange[]; truncated: boolean; readIssues: ResearchChangeReadIssue[]; successfulReads: number };
+async function candidates(userId: string, now: Date, category?: ResearchChangeCategory): Promise<CandidateResult> {
+    const result: CandidateResult = { entries: [], truncated: false, readIssues: [], successfulReads: 0 };
+    const wants = (value: ResearchChangeCategory) => !category || category === value;
+    async function read(scope: ResearchChangeReadIssue['scope'], message: string, callback: () => Promise<void>) {
+        try { await callback(); result.successfulReads++; }
+        catch { result.readIssues.push({ scope, message }); }
+    }
+    if (wants('external-fact') || wants('own-edit') || wants('review-due')) {
+        await read('research', '活动研究读取失败或协调状态未核对；相关观点、复核与事件范围未确认，请刷新或核查维护状态。', async () => {
+            const raw = await withWatchlistLifecycle(userId, { operation: 'research-changes-journal', readOnly: true }, async () => Watchlist.aggregate([
+                { $match: { userId, archivedAt: null } }, { $sort: { addedAt: -1, _id: 1 } }, { $limit: CHANGE_LIMITS.records + 1 },
+                { $project: { symbol: 1, company: 1, addedAt: 1, observationUpdatedAt: 1, nextReviewDate: 1,
+                    group: 1, note: 1, invalidation: 1, targetPrice: 1, reviewStatus: 1, reviewedAt: 1, proximityPercent: 1,
+                    journal: { $slice: [{ $ifNull: ['$journal', []] }, -CHANGE_LIMITS.journalTail] },
+                    journalTruncated: { $gt: [{ $size: { $ifNull: ['$journal', []] } }, CHANGE_LIMITS.journalTail] } } },
+            ]));
+            const records: (SavedWatchlistRecord & { journalTruncated?: boolean })[] = JSON.parse(JSON.stringify(raw.slice(0, CHANGE_LIMITS.records)));
+            const merged = mergeWatchlistRecords(records);
+            result.truncated ||= raw.length > CHANGE_LIMITS.records;
+            if (wants('own-edit') || wants('review-due')) {
+                const journals: ResearchJournalRecord[] = merged.map((entry) => {
+                    const aliases = records.filter((record) => identifyMarketAndCode(record.symbol).normalizedSymbol === entry.symbol);
+                    return { ...entry, _id: observationOwner(aliases)._id,
+                        journal: [...new Map(aliases.flatMap((record) => record.journal ?? []).map((revision) => [revision.id, revision])).values()],
+                        journalTruncated: aliases.some((record) => record.journalTruncated) };
+                });
+                result.entries.push(...journalResearchChanges(journals, now).filter((entry) => wants(researchChangeCategory(entry))));
+                if (wants('own-edit')) result.truncated ||= records.some((record) => record.journalTruncated);
+            }
+            if (wants('external-fact')) {
+                await read('events', '已留存的事件版本读取失败；本次不能确认预约改期范围。', async () => {
+                    const symbols = merged.map((entry) => entry.symbol);
+                    const histories = symbols.length ? await ResearchEventHistoryRecord.find({ userId, symbol: { $in: symbols } })
+                        .sort({ observedAt: -1, identity: 1 }).limit(CHANGE_LIMITS.histories + 1).lean() : [];
+                    result.entries.push(...eventResearchChanges(histories.slice(0, CHANGE_LIMITS.histories)));
+                    result.truncated ||= histories.length > CHANGE_LIMITS.histories || histories.some((history) => history.revision > CHANGE_LIMITS.versions);
+                });
+            }
+        });
+    }
+    if (wants('plan-due')) await read('plans', '人工计划读取失败或协调状态未核对；本次不能确认计划到期范围。', async () => {
+        const due = await listDueManualPlans(userId, now);
+        result.entries.push(...manualPlanResearchChanges(due.plans, now)); result.truncated ||= due.truncated;
     });
-    const symbols = merged.map((entry) => entry.symbol);
-    const histories = symbols.length ? await ResearchEventHistoryRecord.find({ userId, symbol: { $in: symbols } })
-        .sort({ observedAt: -1, identity: 1 }).limit(CHANGE_LIMITS.histories + 1).lean() : [];
-    const all = sortResearchChanges([...eventResearchChanges(histories.slice(0, CHANGE_LIMITS.histories)), ...journalResearchChanges(journals, now)]);
-    return { entries: all.slice(0, CHANGE_LIMITS.candidates),
-        truncated: raw.length > CHANGE_LIMITS.records || histories.length > CHANGE_LIMITS.histories
-            || records.some((record) => record.journalTruncated) || histories.some((history) => history.revision > CHANGE_LIMITS.versions)
-            || all.length > CHANGE_LIMITS.candidates };
+    if (wants('external-fact')) await read('facts', '人工事实卡片读取失败；本次不能确认已登记事实范围。', async () => {
+        const facts = await getResearchFacts({ limit: 50 });
+        result.entries.push(...manualFactResearchChanges(facts.facts)); result.truncated ||= !!facts.nextCursor;
+    });
+    const entries = sortResearchChanges(result.entries);
+    return { ...result, entries: entries.slice(0, CHANGE_LIMITS.candidates), truncated: result.truncated || entries.length > CHANGE_LIMITS.candidates };
 }
 
-export async function getResearchChanges(options: { limit?: number; includeHandled?: boolean } = {}): Promise<ResearchChangeInbox> {
+export async function getResearchChanges(options: { limit?: number; includeHandled?: boolean; category?: ResearchChangeCategory } = {}): Promise<ResearchChangeInbox> {
     const userId = await requireUserId();
     const limit = options?.limit ?? 50;
     if (!options || !Number.isInteger(limit) || limit < 1 || limit > CHANGE_LIMITS.entries
-        || (options.includeHandled !== undefined && typeof options.includeHandled !== 'boolean')) throw new Error('待办分页大小须为 1–100');
-    await connectToDatabase();
+        || (options.includeHandled !== undefined && typeof options.includeHandled !== 'boolean')
+        || (options.category !== undefined && !RESEARCH_CHANGE_CATEGORIES.includes(options.category))) throw new Error('待办分页大小或分类无效');
+    const failure = (readIssues: ResearchChangeReadIssue[]): ResearchChangeInbox => ({
+        entries: [], limit, truncated: false, limitations: [...CHANGE_LIMITATIONS], readStatus: 'read-failed', readIssues,
+    });
+    try { await connectToDatabase(); }
+    catch { return failure([{ scope: 'research', message: '研究资料数据库读取失败；本次尚未确认任何待办范围。' }]); }
     const now = new Date();
-    const result = await candidates(userId, now);
-    const states = result.entries.length ? await ResearchChangeStateRecord.find({ userId, changeId: { $in: result.entries.map((entry) => entry.id) } })
-        .limit(CHANGE_LIMITS.candidates).lean() : [];
+    const result = await candidates(userId, now, options.category);
+    let states;
+    try {
+        states = result.entries.length ? await ResearchChangeStateRecord.find({ userId, changeId: { $in: result.entries.map((entry) => entry.id) } })
+            .limit(CHANGE_LIMITS.candidates).lean() : [];
+    } catch { return failure([...result.readIssues, { scope: 'handling', message: '待办处理状态读取失败；本次未展示无法确认处理状态的候选，请刷新核对。' }]); }
     const byId = new Map(states.map((state) => [state.changeId, state]));
     const entries = result.entries.map((entry) => applyResearchChangeState(entry, byId.get(entry.id), now))
         .filter((entry) => options.includeHandled || entry.status === 'pending');
-    return { entries: entries.slice(0, limit), limit, truncated: result.truncated || entries.length > limit, limitations: [...CHANGE_LIMITATIONS] };
+    return { entries: entries.slice(0, limit), limit, truncated: result.truncated || entries.length > limit, limitations: [...CHANGE_LIMITATIONS],
+        readStatus: result.readIssues.length ? (result.successfulReads ? 'partial' : 'read-failed') : 'read', readIssues: result.readIssues };
 }
 
 export async function setResearchChangeState(input: ResearchChangeStateInput): Promise<ResearchChange> {
@@ -60,9 +99,10 @@ export async function setResearchChangeState(input: ResearchChangeStateInput): P
     const now = new Date();
     const value = validateResearchChangeState(input, now);
     await connectToDatabase();
-    // Re-derive the concrete fact from this user's active records. Clients cannot create arbitrary state rows.
-    const entry = (await candidates(userId, now)).entries.find((change) => change.id === value.id);
-    if (!entry) throw new Error('未找到当前账户可处理的变化，请刷新');
+    const kind = value.id.split(':')[0] as ResearchChange['kind'];
+    // Re-derive only this category's concrete version from owner-scoped records; no plan/fact mutation.
+    const entry = (await candidates(userId, now, researchChangeCategory({ kind }))).entries.find((change) => change.id === value.id);
+    if (!entry) throw new Error('未找到当前账户可处理的变化或资料暂不可读，请刷新');
     const saved = { userId, changeId: value.id, status: value.status,
         snoozedUntil: value.snoozedUntil ? new Date(value.snoozedUntil) : null,
         revision: value.expectedStateVersion + 1, updatedAt: now };

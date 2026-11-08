@@ -87,6 +87,21 @@ describe('on-demand daily comparison actions', () => {
         await expect(getDailyResearch({ scope: 'watched', benchmarkSymbol: 'AAPL' })).rejects.toThrow('明确基准');
         expect(mocks.history).not.toHaveBeenCalled();
     });
+    it('issues a trusted draft for exactly the displayed result, retaining sources even for failed/excluded rows', async () => {
+        mocks.history.mockImplementation(async (symbol: string) => symbol === '000002.SZ' ? null : history(symbol));
+        const { getDailyResearch } = await import('@/lib/actions/relative-history.actions');
+        const { comparisonDrafts } = await import('@/lib/research-comparisons');
+        const result = await getDailyResearch({ scope: 'group', groupId: 'abcdef012345678901234567', benchmarkSymbol: '510300.SS' });
+        const { draft, ...displayed } = result;
+        const trusted = comparisonDrafts.read('owner-a', draft.id);
+        expect(trusted.result).toEqual(displayed);
+        expect(trusted.originalSeries).toEqual(expect.arrayContaining([{ symbol: '000002.SZ', series: null }, { symbol: '510300.SS', series: history('510300.SS') }]));
+        const requests = mocks.history.mock.calls.length;
+        result.rows[0].volume.volume = 123456;
+        expect(comparisonDrafts.read('owner-a', draft.id).result.rows[0].volume.volume).toBe(1000);
+        expect(() => comparisonDrafts.read('other-owner', draft.id)).toThrow('当前账户');
+        expect(mocks.history).toHaveBeenCalledTimes(requests);
+    });
     it('discloses an excluded basis mismatch while retaining other comparable members', async () => {
         mocks.history.mockImplementation(async (symbol: string) => ({ ...history(symbol), ...(symbol === '000002.SZ' ? { source: 'unknown' } : {}) }));
         const { getDailyResearch } = await import('@/lib/actions/relative-history.actions');

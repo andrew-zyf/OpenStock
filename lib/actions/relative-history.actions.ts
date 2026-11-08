@@ -8,6 +8,8 @@ import {
     dailyPairReason, dailySupportReason, DAILY_RESEARCH_LIMIT, type DailyResearchResult, type PeerMember,
 } from '@/lib/market/daily-research';
 
+import { ComparisonError, comparisonDrafts, type DailyResearchDraftResult } from '@/lib/research-comparisons';
+
 const loadDailyHistory = createDailyHistoryLoader(symbol => getUnifiedChartSeries(symbol, '3m'));
 
 /** Exactly two targeted daily-history requests, in parallel; the adapter also bounds each upstream. */
@@ -34,14 +36,14 @@ export async function getRelativeHistoryComparison(symbol: string, benchmarkSymb
 }
 
 /** Explicit user request only: at most 20 rows plus one shared benchmark, no SSR fan-out. */
-export async function getDailyResearch(input: { scope: 'watched' | 'group'; groupId?: string; benchmarkSymbol: string }): Promise<DailyResearchResult> {
+export async function getDailyResearch(input: { scope: 'watched' | 'group'; groupId?: string; benchmarkSymbol: string }): Promise<DailyResearchDraftResult> {
     const { requireUserId } = await import('@/lib/better-auth/auth');
     const userId = await requireUserId();
-    if (!input || !['watched', 'group'].includes(input.scope) || typeof input.benchmarkSymbol !== 'string' || input.benchmarkSymbol.length > 25) throw new Error('比较范围无效');
+    if (!input || !['watched', 'group'].includes(input.scope) || typeof input.benchmarkSymbol !== 'string' || input.benchmarkSymbol.length > 25) throw new ComparisonError('INVALID_INPUT', '比较范围无效');
     const benchmarkSymbol = identifyMarketAndCode(input.benchmarkSymbol).normalizedSymbol;
     const benchmarkMarket = identifyMarketAndCode(benchmarkSymbol).market;
     const representative = benchmarkMarket === 'cn' ? '000001.SZ' : '00700.HK';
-    if (dailySupportReason(benchmarkSymbol) || !getHistoricalBenchmarkOptions(representative).some(option => option.symbol === benchmarkSymbol)) throw new Error('请选择受支持的明确基准');
+    if (dailySupportReason(benchmarkSymbol) || !getHistoricalBenchmarkOptions(representative).some(option => option.symbol === benchmarkSymbol)) throw new ComparisonError('INVALID_INPUT', '请选择受支持的明确基准');
     const group = input.scope === 'group' ? await (await import('@/lib/actions/peer-groups.actions')).getPeerGroup(input.groupId ?? '') : undefined;
     let members: PeerMember[];
     if (group) members = group.members;
@@ -75,5 +77,10 @@ export async function getDailyResearch(input: { scope: 'watched' | 'group'; grou
         const series = histories.get(member.symbol) ?? null;
         return { ...member, comparison: compareDailyResearch(member.symbol, series, benchmarkSymbol, benchmark, now, commonDates), volume: compareDailyVolume(member.symbol, series, now) };
     });
-    return { scope: input.scope, group, benchmarkSymbol, rows, omittedMembers, commonDates: commonDates.slice(-21), fetchedAt: now.toISOString() };
+    const result: DailyResearchResult = { scope: input.scope, group, benchmarkSymbol, rows, omittedMembers, commonDates: commonDates.slice(-21), fetchedAt: now.toISOString() };
+    const originalSeries = [...histories].map(([symbol, series]) => ({ symbol, series }));
+    // Store the exact server result before crossing the client boundary; saving only sends
+    // this opaque owner-bound draft id and never re-requests or trusts client prices/sources.
+    const draft = comparisonDrafts.issue(userId, result, originalSeries);
+    return { ...result, draft };
 }
