@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getInstrumentSession, getMarketSession } from '@/lib/market/sessions';
-import { EXCHANGE_CALENDARS, getExchangeCalendarDay } from '@/lib/market/calendar';
+import { EXCHANGE_CALENDARS, EXCHANGE_CALENDARS_2027, getCalendarMaintenanceSummary, getExchangeCalendarDay } from '@/lib/market/calendar';
 import { getMarket, isMarketOpen } from '@/lib/markets';
 
 const session = (symbol: string, instant: string) => getInstrumentSession(symbol, new Date(instant));
@@ -89,7 +89,7 @@ describe('bounded official calendars', () => {
         expect(session('AAPL', `${date}T12:59:59-05:00`)).toMatchObject({ phase: 'continuous', isTrading: true, nextTransition: `${date}T18:00:00.000Z` });
         expect(session('AAPL', `${date}T13:00:00-05:00`)).toMatchObject({ phase: 'closed', isTrading: false, calendarStatus: 'verified' });
     });
-    it.each(['2025-01-01', '2027-01-01'])('never extrapolates a verified New Year holiday outside coverage: %s', date => {
+    it.each(['2025-01-01', '2028-01-01'])('never extrapolates a verified New Year holiday outside coverage: %s', date => {
         for (const symbol of ['SSE:600000', 'HKEX:700', '2330.TW', 'AAPL']) {
             const result = session(symbol, `${date}T15:00:00Z`);
             expect(result.calendarStatus).toBe('unverified');
@@ -98,7 +98,7 @@ describe('bounded official calendars', () => {
     });
     it('keeps scheduled trading independent of calendar verification', () => {
         expect(session('SSE:600000', '2027-01-04T10:00:00+08:00')).toMatchObject({ phase: 'continuous', isTrading: true, calendarStatus: 'unverified' });
-        expect(session('AAPL', '2027-01-02T10:00:00-05:00')).toMatchObject({ phase: 'closed', isTrading: false, calendarStatus: 'unverified' });
+        expect(session('AAPL', '2028-01-02T10:00:00-05:00')).toMatchObject({ phase: 'closed', isTrading: false, calendarStatus: 'unverified' });
     });
     it('retains actual source URLs, annual bounds and versions for all exchanges', () => {
         for (const calendar of Object.values(EXCHANGE_CALENDARS)) {
@@ -107,7 +107,49 @@ describe('bounded official calendars', () => {
             expect(calendar.coverage).toEqual({ start: '2026-01-01', end: '2026-12-31' });
             expect(calendar.holidays.every(date => date.startsWith('2026-'))).toBe(true);
         }
-        expect(getExchangeCalendarDay('HKEX', '2027-12-24')).toMatchObject({ calendarStatus: 'unverified', isHoliday: false, halfDayClose: undefined });
+        expect(getExchangeCalendarDay('HKEX', '2028-12-24')).toMatchObject({ calendarStatus: 'unverified', isHoliday: false, halfDayClose: undefined });
+    });
+});
+
+describe('reviewed 2027 calendar maintenance', () => {
+    it.each(['HKEX:700', 'AAPL'])('verifies only the official published 2027 New Year closures: %s', symbol => {
+        expect(session(symbol, '2027-01-01T15:00:00Z')).toMatchObject({ phase: 'holiday', calendarStatus: 'verified', calendarCoverageEnd: '2027-12-31', calendarReviewedAt: '2026-11-08', calendarRenewalRequired: false });
+    });
+    it.each(['SSE:600000', '000001.SZ', '830799.BJ', '2330.TW', '6488.TWO'])('keeps unverified 2027 exchanges explicit: %s', symbol => {
+        expect(session(symbol, '2027-01-01T10:00:00+08:00')).toMatchObject({ phase: 'continuous', calendarStatus: 'unverified', calendarCoverageEnd: '2026-12-31', calendarRenewalRequired: true });
+    });
+    it.each(['2027-02-08', '2027-02-09', '2027-03-26', '2027-03-29', '2027-04-05', '2027-05-13', '2027-06-09', '2027-07-01', '2027-09-16', '2027-10-01', '2027-10-08', '2027-12-27'])('recognizes HKEX CT/077/26 cash-security closure %s', date => {
+        expect(session('HKEX:700', `${date}T10:00:00+08:00`)).toMatchObject({ phase: 'holiday', calendarStatus: 'verified' });
+    });
+    it.each(['2027-02-05', '2027-12-24', '2027-12-31'])('preserves HK half-day closing auction boundaries: %s', date => {
+        expect(session('HKEX:700', `${date}T11:59:59+08:00`)).toMatchObject({ phase: 'continuous', calendarStatus: 'verified' });
+        expect(session('HKEX:700', `${date}T12:00:00+08:00`)).toMatchObject({ phase: 'closing-auction', nextTransition: `${date}T04:10:00.000Z` });
+        expect(session('HKEX:700', `${date}T12:10:00+08:00`)).toMatchObject({ phase: 'closed' });
+    });
+    it.each(['2027-01-18', '2027-02-15', '2027-03-26', '2027-05-31', '2027-06-18', '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24'])('recognizes NYSE 2027 cash-equity closure %s', date => {
+        expect(session('AAPL', `${date}T10:00:00-05:00`)).toMatchObject({ phase: 'holiday', calendarStatus: 'verified' });
+    });
+    it('uses the only published US 2027 early close and does not infer an observed New Year', () => {
+        expect(session('AAPL', '2027-11-26T12:59:59-05:00')).toMatchObject({ phase: 'continuous', nextTransition: '2027-11-26T18:00:00.000Z' });
+        expect(session('AAPL', '2027-11-26T13:00:00-05:00')).toMatchObject({ phase: 'closed' });
+        expect(session('AAPL', '2027-12-31T14:00:00-05:00')).toMatchObject({ phase: 'continuous', calendarStatus: 'verified' });
+    });
+    it('uses the exchange year at the 2027/2028 boundary', () => {
+        expect(session('HKEX:700', '2027-12-31T16:00:00Z')).toMatchObject({ exchangeDate: '2028-01-01', calendarStatus: 'unverified' });
+        expect(session('AAPL', '2028-01-01T02:00:00Z')).toMatchObject({ exchangeDate: '2027-12-31', calendarStatus: 'verified' });
+    });
+    it('retains source, reviewed date, annual bounds and actionable missing-year notes', () => {
+        expect(Object.keys(EXCHANGE_CALENDARS_2027).sort()).toEqual(['HKEX', 'US']);
+        const summary = getCalendarMaintenanceSummary(2027);
+        expect(summary.filter(row => row.calendarStatus === 'verified').map(row => row.exchange)).toEqual(['HKEX', 'US']);
+        for (const row of summary) {
+            expect(row.source).toMatch(/^https:\/\//);
+            expect(row.reviewedAt).toBe('2026-11-08');
+            expect(row.renewalRequired).toBe(row.calendarStatus === 'unverified');
+            expect(row.verifiedThrough).toBe(row.renewalRequired ? '2026-12-31' : '2027-12-31');
+        }
+        expect(summary.find(row => row.exchange === 'TWSE')?.note).toContain('115/2026');
+        expect(getCalendarMaintenanceSummary(2028).every(row => row.renewalRequired)).toBe(true);
     });
 });
 

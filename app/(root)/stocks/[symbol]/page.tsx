@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import StockHeader, { StockHeaderSkeleton } from "@/components/stocks/StockHeader";
 import StockSentimentCard from "@/components/stocks/StockSentimentCard";
 import YahooStockChart from "@/components/stocks/YahooStockChart";
+import RelativeHistoryComparison from "@/components/stocks/RelativeHistoryComparison";
+import TradingContext from "@/components/stocks/TradingContext";
 import OrderBookCard from "@/components/stocks/OrderBookCard";
 import CapitalFlowCard from "@/components/stocks/CapitalFlowCard";
 import StockIntelligenceCard from "@/components/stocks/StockIntelligenceCard";
@@ -62,6 +64,8 @@ export default async function StockDetails({ params }: StockDetailsPageProps) {
                 {/* 左侧主视窗：走势主图、财务指标与个股深度情报中心 */}
                 <div className="flex min-w-0 flex-col gap-3">
                     <YahooStockChart symbol={symbol} />
+                    <RelativeHistoryComparison symbol={symbol} currency={meta.currency} />
+                    <TradingContext symbol={symbol} />
 
                     {!corporate ? (
                         <Panel title={meta.kind === 'index' ? '指数信息' : meta.kind === 'etf' ? '基金信息' : '标的信息'} sub={`${meta.exchange} · ${meta.currency}`}>

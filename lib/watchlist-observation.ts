@@ -1,6 +1,7 @@
 import { identifyMarketAndCode } from '@/lib/market/instrument';
 import { getSymbolAliases } from '@/lib/utils';
 import type { UnifiedQuote } from '@/lib/realtime-market';
+import { isMarketDate, type WatchlistJournalEntry } from '@/lib/watchlist-review';
 
 export type ReviewStatus = 'watching' | 'validated' | 'invalidated';
 export type InitialSnapshot = {
@@ -26,6 +27,8 @@ export type WatchlistEntry = {
     reviewedAt?: string;
     observationUpdatedAt?: string;
     initialSnapshot?: InitialSnapshot;
+    nextReviewDate?: string;
+    proximityPercent?: number;
 };
 
 /** Current quote fields are independent of the immutable observation snapshot. */
@@ -51,6 +54,8 @@ export type ObservationInput = {
     invalidation?: string | null;
     targetPrice?: number | null;
     reviewStatus?: ReviewStatus;
+    nextReviewDate?: string | null;
+    proximityPercent?: number | null;
 };
 
 export const OBSERVATION_LIMITS = { group: 80, note: 2000, invalidation: 2000 } as const;
@@ -59,7 +64,7 @@ export const REVIEW_STATUSES: readonly ReviewStatus[] = ['watching', 'validated'
 export function validateObservationInput(input: unknown): ObservationInput {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('无效的观察记录');
     const values = input as Record<string, unknown>;
-    if (Object.keys(values).some((key) => !['group', 'note', 'invalidation', 'targetPrice', 'reviewStatus'].includes(key))) {
+    if (Object.keys(values).some((key) => !['group', 'note', 'invalidation', 'targetPrice', 'reviewStatus', 'nextReviewDate', 'proximityPercent'].includes(key))) {
         throw new Error('无效的观察字段');
     }
     const result: ObservationInput = {};
@@ -81,6 +86,14 @@ export function validateObservationInput(input: unknown): ObservationInput {
         if (!REVIEW_STATUSES.includes(values.reviewStatus as ReviewStatus)) throw new Error('无效的复核状态');
         result.reviewStatus = values.reviewStatus as ReviewStatus;
     }
+    if (values.nextReviewDate !== undefined) {
+        if (values.nextReviewDate !== null && !isMarketDate(values.nextReviewDate)) throw new Error('无效的下次复核日期');
+        result.nextReviewDate = values.nextReviewDate as string | null;
+    }
+    if (values.proximityPercent !== undefined) {
+        if (values.proximityPercent !== null && (typeof values.proximityPercent !== 'number' || !Number.isFinite(values.proximityPercent) || values.proximityPercent < 0 || values.proximityPercent > 100)) throw new Error('接近关键价比例须为 0–100');
+        result.proximityPercent = values.proximityPercent as number | null;
+    }
     if (!Object.keys(result).length) throw new Error('观察记录不能为空');
     return result;
 }
@@ -98,7 +111,7 @@ export function snapshotFromQuote(quote: UnifiedQuote | null | undefined): Initi
 }
 
 /** Internal, JSON-serialized persistence shape. Nulls retain intentional clears across legacy aliases. */
-export type SavedWatchlistRecord = Omit<WatchlistEntry, 'reviewStatus' | 'group' | 'note' | 'invalidation' | 'targetPrice' | 'reviewedAt'> & {
+export type SavedWatchlistRecord = Omit<WatchlistEntry, 'reviewStatus' | 'group' | 'note' | 'invalidation' | 'targetPrice' | 'reviewedAt' | 'nextReviewDate' | 'proximityPercent'> & {
     _id: string;
     group?: string | null;
     note?: string | null;
@@ -106,6 +119,10 @@ export type SavedWatchlistRecord = Omit<WatchlistEntry, 'reviewStatus' | 'group'
     targetPrice?: number | null;
     reviewStatus?: ReviewStatus;
     reviewedAt?: string | null;
+    nextReviewDate?: string | null;
+    proximityPercent?: number | null;
+    journal?: WatchlistJournalEntry[];
+    journalVersion?: number;
 };
 
 export function observationOwner(records: SavedWatchlistRecord[]): SavedWatchlistRecord {
@@ -136,6 +153,8 @@ export function mergeWatchlistRecords(records: SavedWatchlistRecord[]): Watchlis
             targetPrice: earliest.find((item) => item.targetPrice != null)?.targetPrice,
             reviewStatus: earliest.find((item) => item.reviewStatus)?.reviewStatus,
             reviewedAt: earliest.find((item) => item.reviewedAt)?.reviewedAt,
+            nextReviewDate: earliest.find((item) => item.nextReviewDate)?.nextReviewDate,
+            proximityPercent: earliest.find((item) => item.proximityPercent != null)?.proximityPercent,
             // Older partial revisions can still inherit fields present only on an alias.
             ...(owner.observationUpdatedAt ? owner : {}),
         };
@@ -146,6 +165,8 @@ export function mergeWatchlistRecords(records: SavedWatchlistRecord[]): Watchlis
             reviewStatus: fields.reviewStatus || 'watching', reviewedAt: fields.reviewedAt ?? undefined,
             observationUpdatedAt: owner.observationUpdatedAt,
             initialSnapshot: earliest.find((item) => item.initialSnapshot)?.initialSnapshot,
+            nextReviewDate: fields.nextReviewDate ?? undefined,
+            proximityPercent: fields.proximityPercent ?? undefined,
         };
     }).sort((a, b) => Date.parse(b.addedAt) - Date.parse(a.addedAt));
 }

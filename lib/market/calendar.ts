@@ -5,6 +5,7 @@ export type ExchangeCalendar = {
     coverage: { start: string; end: string };
     source: string;
     version: string;
+    reviewedAt?: string;
     holidays: readonly string[];
     halfDays?: Readonly<Record<string, number>>; // local minutes: continuous trading ends
 };
@@ -73,13 +74,78 @@ export const EXCHANGE_CALENDARS: Readonly<Record<ExchangeId, ExchangeCalendar>> 
     },
 };
 
+/** Separately bounded snapshots preserve the reviewed 2026 calendars verbatim.
+ * Review must establish cash-equity coverage: government calendars, derivatives notices
+ * and a successful HTTP response containing a different year are not sufficient. */
+export const EXCHANGE_CALENDARS_2027: Readonly<Partial<Record<ExchangeId, ExchangeCalendar>>> = {
+    HKEX: {
+        coverage: { start: '2027-01-01', end: '2027-12-31' },
+        source: 'https://www.hkex.com.hk/-/media/HKEX-Market/Services/Circulars-and-Notices/Participant-and-Members-Circulars/SEHK/2026/ce_SEHK_CT_077_2026.pdf',
+        version: '2026-06-01 / CT/077/26, cash securities, pages 1–2', reviewedAt: '2026-11-08',
+        holidays: [
+            '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-26', '2027-03-29',
+            '2027-04-05', '2027-05-13', '2027-06-09', '2027-07-01', '2027-09-16',
+            '2027-10-01', '2027-10-08', '2027-12-27',
+        ],
+        halfDays: { '2027-02-05': 720, '2027-12-24': 720, '2027-12-31': 720 },
+    },
+    US: {
+        coverage: { start: '2027-01-01', end: '2027-12-31' },
+        source: 'https://www.nyse.com/trade/hours-calendars',
+        version: '2025-12-23 / NYSE Group 2026–2028 regular-equities schedule', reviewedAt: '2026-11-08',
+        holidays: [
+            '2027-01-01', '2027-01-18', '2027-02-15', '2027-03-26', '2027-05-31',
+            '2027-06-18', '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24',
+        ],
+        halfDays: { '2027-11-26': 780 },
+    },
+};
+
+const REVIEWED_AT = '2026-11-08';
+const UNVERIFIED_NOTES: Partial<Record<ExchangeId, string>> = {
+    SSE: '2027 年现货交易所公告未核实；不得用政府假日或推算日期续期。',
+    SZSE: '2027 年现货交易所公告未核实；不得沿用上交所未核实的新年度安排。',
+    BSE: '2027 年现货交易所公告未核实；需单独核对北交所公告。',
+    HKEX: '需核对目标年度的现货证券公告及半日市。',
+    TWSE: '2027 查询返回 115/2026 旧年度正文；116/2027 尚未核实。',
+    TPEX: '2027 年柜买市场开休市表尚未核实；不得用政府或上市市场日历代替。',
+    US: '需核对目标年度 NYSE 常规股票休市及提前收盘公告。',
+};
+
+function snapshots(exchange: ExchangeId): ExchangeCalendar[] {
+    const extension = EXCHANGE_CALENDARS_2027[exchange];
+    return extension ? [EXCHANGE_CALENDARS[exchange], extension] : [EXCHANGE_CALENDARS[exchange]];
+}
+
+/** Offline maintenance evidence; an unverified year always requires official review. */
+export function getCalendarMaintenanceSummary(targetYear: number) {
+    const start = `${targetYear}-01-01`;
+    const end = `${targetYear}-12-31`;
+    return (Object.keys(EXCHANGE_CALENDARS) as ExchangeId[]).map(exchange => {
+        const all = snapshots(exchange);
+        const verified = all.find(calendar => calendar.coverage.start <= start && calendar.coverage.end >= end);
+        const latest = all[all.length - 1];
+        return {
+            exchange, targetYear, calendarStatus: (verified ? 'verified' : 'unverified') as CalendarStatus,
+            verifiedThrough: latest.coverage.end, source: (verified ?? latest).source,
+            reviewedAt: (verified ?? latest).reviewedAt ?? REVIEWED_AT,
+            renewalRequired: !verified,
+            note: verified ? '已核验全年常规现货安排；不含临时停市。' : `${targetYear} 年未核验；${UNVERIFIED_NOTES[exchange] ?? '请核对交易所年度公告。'}`,
+        };
+    });
+}
+
 export function getExchangeCalendarDay(exchange: ExchangeId, exchangeDate: string) {
-    const calendar = EXCHANGE_CALENDARS[exchange];
-    const verified = exchangeDate >= calendar.coverage.start && exchangeDate <= calendar.coverage.end;
+    const all = snapshots(exchange);
+    const calendar = all.find(calendar => exchangeDate >= calendar.coverage.start && exchangeDate <= calendar.coverage.end);
+    const latest = all[all.length - 1];
     return {
-        calendarStatus: (verified ? 'verified' : 'unverified') as CalendarStatus,
-        calendarSource: calendar.source,
-        isHoliday: verified && calendar.holidays.includes(exchangeDate),
-        halfDayClose: verified ? calendar.halfDays?.[exchangeDate] : undefined,
+        calendarStatus: (calendar ? 'verified' : 'unverified') as CalendarStatus,
+        calendarSource: (calendar ?? latest).source,
+        calendarCoverageEnd: (calendar ?? latest).coverage.end,
+        calendarReviewedAt: (calendar ?? latest).reviewedAt ?? REVIEWED_AT,
+        calendarRenewalRequired: !calendar,
+        isHoliday: Boolean(calendar?.holidays.includes(exchangeDate)),
+        halfDayClose: calendar?.halfDays?.[exchangeDate],
     };
 }

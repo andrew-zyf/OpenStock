@@ -16,6 +16,8 @@ import { tvToAppSymbol } from '@/lib/utils';
 import type { Market } from '@/lib/markets';
 import { MARKETS, MARKET_COOKIE, getMarket, isMarketOpen, marketForCountry } from "@/lib/markets";
 import { getSession } from "@/lib/better-auth/auth";
+import { getUserWatchlist } from '@/lib/actions/watchlist.actions';
+import { canonicalCNsymbol } from '@/lib/market/sector-members';
 
 async function MarketQuotes({ market }: { market: Market }) {
     const symbols = [...new Set(market.groups.flatMap((group) => group.symbols.map(([symbol]) => tvToAppSymbol(symbol))))];
@@ -24,8 +26,9 @@ async function MarketQuotes({ market }: { market: Market }) {
 }
 
 async function SectorFlow({ selectedMarket }: { selectedMarket: string }) {
-    const initialData = await getChinaSectorRankings();
-    return <SectorFlowPanel initialData={initialData} selectedMarket={selectedMarket} />;
+    const [initialData, entries] = await Promise.all([getChinaSectorRankings(), getUserWatchlist()]);
+    const watchlistSymbols = entries.map((entry) => canonicalCNsymbol(entry.symbol)).filter((symbol): symbol is string => Boolean(symbol));
+    return <SectorFlowPanel initialData={initialData} selectedMarket={selectedMarket} watchlistSymbols={watchlistSymbols} />;
 }
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ market?: string }> }) {

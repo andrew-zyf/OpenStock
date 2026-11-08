@@ -7,6 +7,8 @@ import { getWatchlistData } from '@/lib/actions/finnhub.actions';
 import { getWatchlistNews, getMultiMarketNews } from '@/lib/actions/china-market.actions';
 import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import AlertsPanel from '@/components/watchlist/AlertsPanel';
+import AlertHealthStatus from '@/components/watchlist/AlertHealthStatus';
+import MarketEventsCalendar from '@/components/watchlist/MarketEventsCalendar';
 import NewsList from '@/components/watchlist/NewsList';
 import Panel from '@/components/Panel';
 import DataFreshness from '@/components/DataFreshness';
@@ -59,6 +61,7 @@ export default async function WatchlistPage() {
                             <Symbols items={items} />
                         </Suspense>
                     </Panel>
+                    <MarketEventsCalendar items={items} />
                     <Panel title="自选资讯" sub="仅展示匹配关注标的的资讯，可切换全市场动态">
                         <Suspense fallback={<RowsSkeleton />}>
                             <News items={items} />
@@ -67,6 +70,7 @@ export default async function WatchlistPage() {
                 </div>
 
                 <Panel title="价格预警" sub={alertsEnabled ? `${activeAlerts} 条未触发 · 后台检查依赖任务配置` : 'OpenStock 预警服务'} className="self-start">
+                    <AlertHealthStatus />
                     <AlertsPanel alerts={alerts} />
                 </Panel>
             </div>

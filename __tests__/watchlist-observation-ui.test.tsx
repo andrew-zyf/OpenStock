@@ -1,12 +1,16 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ObservationEditor, { observationInputFromDraft, validateObservationDraft, type ObservationDraft } from '@/components/watchlist/ObservationEditor';
 import WatchlistTable, { observationPriceChange } from '@/components/watchlist/WatchlistTable';
 import type { WatchlistEntry } from '@/lib/watchlist-observation';
 import type { LiveQuoteMap } from '@/hooks/useLiveQuotes';
 
-const { quoteResource, updateObservation } = vi.hoisted(() => ({ quoteResource: vi.fn(), updateObservation: vi.fn() }));
+const { quoteResource, updateObservation, queueClock } = vi.hoisted(() => ({ quoteResource: vi.fn(), updateObservation: vi.fn(), queueClock: { tick: null as Date | null } }));
+vi.mock('react', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('react')>();
+    return { ...actual, useState: ((initial: unknown) => actual.useState(initial === null && queueClock.tick ? queueClock.tick : initial)) as typeof actual.useState };
+});
 vi.mock('@/hooks/useLiveQuotes', () => ({ useLiveQuoteResource: quoteResource }));
 vi.mock('@/lib/actions/watchlist.actions', () => ({ updateWatchlistObservation: updateObservation }));
 vi.mock('@/components/watchlist/CreateAlertModal', () => ({ default: () => null }));
@@ -15,8 +19,10 @@ vi.mock('@/components/PriceFlash', () => ({ default: ({ children }: { children: 
 vi.mock('@/components/SearchCommand', () => ({ SearchButton: () => null }));
 
 const entry: WatchlistEntry = { symbol: 'AAPL', company: 'Apple', addedAt: '2026-11-06T07:00:00Z', reviewStatus: 'watching' };
-const draft: ObservationDraft = { group: '', note: '', invalidation: '', targetPrice: '', reviewStatus: 'watching' };
+const draft: ObservationDraft = { group: '', note: '', invalidation: '', targetPrice: '', reviewStatus: 'watching', nextReviewDate: '', proximityPercent: '' };
 const snapshot = { price: 100, currency: 'USD', source: 'Finnhub', asOf: '2026-11-06T20:00:00Z', fetchedAt: '2026-11-06T20:01:00Z', priceBasis: 'last-trade' as const, adjustment: 'unadjusted' as const };
+
+afterEach(() => { queueClock.tick = null; vi.useRealTimers(); });
 
 beforeEach(() => {
     quoteResource.mockReset();
@@ -28,7 +34,7 @@ describe('observation form', () => {
     it('renders visible labels, named controls, native limits and an enabled submit before interaction', () => {
         const html = renderToStaticMarkup(<ObservationEditor entry={entry} currency="USD" onSaved={vi.fn()} onClose={vi.fn()} />);
         expect(html).toContain('method="post"');
-        for (const name of ['group', 'note', 'invalidation', 'targetPrice', 'reviewStatus']) expect(html).toContain(`name="${name}"`);
+        for (const name of ['group', 'note', 'invalidation', 'targetPrice', 'reviewStatus', 'nextReviewDate', 'proximityPercent']) expect(html).toContain(`name="${name}"`);
         expect(html).toContain('maxLength="80"');
         expect(html).toContain('maxLength="2000"');
         expect(html).toContain('min="5e-324"');
@@ -50,8 +56,19 @@ describe('observation form', () => {
         });
         expect(validateObservationDraft(draft)).toEqual({});
         expect(validateObservationDraft({ ...draft, targetPrice: '0.00001' })).toEqual({});
-        expect(observationInputFromDraft(draft)).toEqual({ group: null, note: null, invalidation: null, targetPrice: null, reviewStatus: 'watching' });
+        expect(observationInputFromDraft(draft)).toEqual({ group: null, note: null, invalidation: null, targetPrice: null, reviewStatus: 'watching', nextReviewDate: null, proximityPercent: null });
         expect(observationInputFromDraft({ ...draft, group: '  test  ', note: '理由', targetPrice: '1.25', reviewStatus: 'validated' })).toMatchObject({ group: 'test', note: '理由', targetPrice: 1.25, reviewStatus: 'validated' });
+    });
+    it('validates deadlines and proximity only when changed and preserves explicit zero and nullable clears', () => {
+        expect(validateObservationDraft({ ...draft, nextReviewDate: '2026-02-30', proximityPercent: '101' })).toMatchObject({ nextReviewDate: expect.any(String), proximityPercent: expect.any(String) });
+        expect(validateObservationDraft({ ...draft, nextReviewDate: '2026-11-09', proximityPercent: '0' })).toEqual({});
+        expect(observationInputFromDraft({ ...draft, proximityPercent: '0', nextReviewDate: '2026-11-09' }, draft)).toEqual({ proximityPercent: 0, nextReviewDate: '2026-11-09' });
+        const scheduled = { ...draft, nextReviewDate: '2026-11-09', proximityPercent: '5' };
+        expect(observationInputFromDraft(draft, scheduled)).toEqual({ nextReviewDate: null, proximityPercent: null });
+        const html = renderToStaticMarkup(<ObservationEditor entry={entry} currency="USD" onSaved={vi.fn()} onClose={vi.fn()} />);
+        expect(html).toContain('America/New_York');
+        expect(html).toContain('type="date"');
+        expect(html).toContain('max="100"');
     });
     it('saves group/status changes without validating or resubmitting an untouched 2002-character legacy note', () => {
         const note = `${'甲'.repeat(1000)}\n\n${'乙'.repeat(1000)}`;
@@ -89,6 +106,18 @@ describe('observation form', () => {
 });
 
 describe('honest observation and benchmark rendering', () => {
+    it('accepts a new quote between clock ticks and expires it on a later render without new quote data', () => {
+        vi.useFakeTimers();
+        queueClock.tick = new Date('2026-11-06T15:00:00Z');
+        vi.setSystemTime(new Date('2026-11-06T15:00:15Z'));
+        quoteResource.mockReturnValue({ data: { AAPL: { c: 101, currency: 'USD', source: 'Finnhub', asOf: '2026-11-06T15:00:14Z', priceBasis: 'last-trade' } }, loading: false, stale: false, error: null });
+        const rows = [{ ...entry, targetPrice: 100, name: 'Apple', price: 101, currency: 'USD', peRatio: 0 }];
+        expect(renderToStaticMarkup(<WatchlistTable initialRows={rows} />)).toContain('接近观察价：现价 101');
+        // The interval forces a render even when the live quote object has not changed.
+        queueClock.tick = new Date('2026-11-06T15:02:30Z');
+        vi.setSystemTime(queueClock.tick);
+        expect(renderToStaticMarkup(<WatchlistTable initialRows={rows} />)).not.toContain('接近观察价：现价 101');
+    });
     it('does not retrofit missing snapshots and declines stale, previous-close and cross-currency comparisons', () => {
         expect(observationPriceChange(entry, { c: 110, currency: 'USD', priceBasis: 'last-trade' }).reason).toContain('旧记录不补造');
         const observed = { ...entry, initialSnapshot: snapshot };
@@ -125,7 +154,7 @@ describe('honest observation and benchmark rendering', () => {
         expect(html).toContain('来源未提供');
         expect(html).toContain('等待标的与基准报价');
         expect(html).toContain('观察更新：未记录');
-        expect(html).toContain('最近复核：未记录');
+        expect(html).toContain('状态标记时间：未记录');
         expect(html).not.toContain('+0.00%');
     });
 });

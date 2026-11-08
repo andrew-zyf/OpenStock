@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useMarketResource } from '@/hooks/useMarketResource';
 import Link from "next/link";
 import { Flame, TrendingUp } from "lucide-react";
 import Panel from "@/components/Panel";
 import ChangePill from "@/components/ChangePill";
 import { getChinaSectorRankings, type SectorFlowItem } from "@/lib/actions/china-market.actions";
+import ChinaSectorMembers, { createSectorMembersLoader } from '@/components/ChinaSectorMembers';
+import { canonicalCNsymbol } from '@/lib/market/sector-members';
 
 function formatNetInflow(val?: number): string {
     if (val == null || !Number.isFinite(val)) return '—';
@@ -17,7 +19,11 @@ function formatNetInflow(val?: number): string {
     return `${sign}${Math.round(val)}`;
 }
 
-function SectorList({ items, mode }: { items: SectorFlowItem[]; mode: 'gain' | 'inflow' }) {
+function SectorList({ items, mode, watchlistSymbols, onWatchlistChange, loadMembers }: {
+    items: SectorFlowItem[]; mode: 'gain' | 'inflow'; watchlistSymbols: string[];
+    onWatchlistChange: (symbol: string, added: boolean) => void;
+    loadMembers: ReturnType<typeof createSectorMembersLoader>;
+}) {
     if (!items.length) {
         return <div className="p-4 text-center text-xs text-faint">暂无板块实时排行数据</div>;
     }
@@ -27,6 +33,7 @@ function SectorList({ items, mode }: { items: SectorFlowItem[]; mode: 'gain' | '
             {items.map((sec) => {
                 const isInflowPos = (sec.mainNetInflow ?? 0) >= 0;
                 const isLeaderUp = (sec.leaderChangePercent ?? 0) >= 0;
+                const leaderSymbol = canonicalCNsymbol(sec.leaderSymbol);
                 return (
                     <div
                         key={`${mode}-${sec.code}`}
@@ -46,8 +53,8 @@ function SectorList({ items, mode }: { items: SectorFlowItem[]; mode: 'gain' | '
 
                         <div className="flex items-center justify-between text-[11px]">
                             <span className="text-faint">领涨龙头:</span>
-                            {sec.leaderSymbol ? <Link
-                                href={`/stocks/${sec.leaderSymbol}`}
+                            {leaderSymbol ? <Link
+                                href={`/stocks/${encodeURIComponent(leaderSymbol)}`}
                                 className="group flex items-center gap-1.5 font-semibold hover:underline"
                             >
                                 <span className="text-brand-ink group-hover:text-foreground">{sec.leaderName}</span>
@@ -56,6 +63,8 @@ function SectorList({ items, mode }: { items: SectorFlowItem[]; mode: 'gain' | '
                                 </span>
                             </Link> : <span className="text-faint">—</span>}
                         </div>
+                        <ChinaSectorMembers sectorCode={sec.code} watchlistSymbols={watchlistSymbols}
+                            onWatchlistChange={onWatchlistChange} loadMembers={loadMembers} />
                     </div>
                 );
             })}
@@ -67,9 +76,22 @@ type SectorSnapshot = Awaited<ReturnType<typeof getChinaSectorRankings>> & {
     topGainersFetchedAt?: string; topInflowsFetchedAt?: string;
 };
 
-export default function SectorFlowPanel({ initialData, selectedMarket }: {
-    initialData: SectorSnapshot; selectedMarket: string;
+export default function SectorFlowPanel({ initialData, selectedMarket, watchlistSymbols = [] }: {
+    initialData: SectorSnapshot; selectedMarket: string; watchlistSymbols?: string[];
 }) {
+    const [watchlistChanges, setWatchlistChanges] = useState<Record<string, boolean>>({});
+    const saved = new Set(watchlistSymbols.flatMap((symbol) => canonicalCNsymbol(symbol) ?? []));
+    for (const [symbol, added] of Object.entries(watchlistChanges)) {
+        if (added) saved.add(symbol);
+        else saved.delete(symbol);
+    }
+    const memberLoader = useRef<ReturnType<typeof createSectorMembersLoader> | null>(null);
+    if (!memberLoader.current) memberLoader.current = createSectorMembersLoader();
+    const onWatchlistChange = useCallback((symbol: string, added: boolean) => {
+        const canonical = canonicalCNsymbol(symbol);
+        if (canonical) setWatchlistChanges((previous) => ({ ...previous, [canonical]: added }));
+    }, []);
+    const memberProps = { watchlistSymbols: [...saved], onWatchlistChange, loadMembers: memberLoader.current };
     const seed = { ...initialData,
         topGainersFetchedAt: initialData.errors?.topGainers ? undefined : initialData.fetchedAt,
         topInflowsFetchedAt: initialData.errors?.topInflows ? undefined : initialData.fetchedAt };
@@ -105,7 +127,7 @@ export default function SectorFlowPanel({ initialData, selectedMarket }: {
                 }
             >
                 <div className="p-3">
-                    <SectorList items={topGainers} mode="gain" />
+                    <SectorList items={topGainers} mode="gain" {...memberProps} />
                 </div>
             </Panel>
 
@@ -119,7 +141,7 @@ export default function SectorFlowPanel({ initialData, selectedMarket }: {
                 }
             >
                 <div className="p-3">
-                    <SectorList items={topInflows} mode="inflow" />
+                    <SectorList items={topInflows} mode="inflow" {...memberProps} />
                 </div>
             </Panel>
         </div>

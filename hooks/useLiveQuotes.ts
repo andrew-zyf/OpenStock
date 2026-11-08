@@ -8,7 +8,7 @@ import { QUOTE_REFRESH_MS } from '@/lib/market/refresh';
 export type LiveQuote = {
     c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number;
     priceBasis?: 'last-trade' | 'previous-close';
-    currency?: string; volume?: number; turnover?: number; turnoverRate?: number; marketCap?: number;
+    currency?: string; volume?: number; turnover?: number; turnoverRate?: number; amplitude?: number; marketCap?: number;
     pe?: number; pb?: number; source?: string; asOf?: string; fetchedAt?: string; stale?: boolean;
 };
 export type LiveQuoteMap = Record<string, LiveQuote | null>;

@@ -13,6 +13,9 @@ export type MarketSession = {
     isTrading: boolean;
     calendarStatus: CalendarStatus;
     calendarSource?: string;
+    calendarCoverageEnd?: string;
+    calendarReviewedAt?: string;
+    calendarRenewalRequired?: boolean;
     /** ISO instant of the next scheduled phase change on this exchange date, if any.
      * HK auction endpoints are the published maximum random-matching windows. */
     nextTransition?: string;
@@ -70,7 +73,7 @@ function sessionFor(market: MarketId, exchange: ExchangeId, now: Date, recognize
     if (!recognized) {
         return { phase: 'unknown', label: LABELS.unknown, exchangeDate: clock.exchangeDate, timeZone, isTrading: false, calendarStatus: 'unverified' };
     }
-    const { calendarStatus, calendarSource, isHoliday, halfDayClose } = getExchangeCalendarDay(exchange, clock.exchangeDate);
+    const { calendarStatus, calendarSource, calendarCoverageEnd, calendarReviewedAt, calendarRenewalRequired, isHoliday, halfDayClose } = getExchangeCalendarDay(exchange, clock.exchangeDate);
     let phase: SessionPhase;
     let nextMinute: number | undefined;
     if (isHoliday) phase = 'holiday';
@@ -89,7 +92,7 @@ function sessionFor(market: MarketId, exchange: ExchangeId, now: Date, recognize
     return {
         phase, label: LABELS[phase], exchangeDate: clock.exchangeDate, timeZone,
         isTrading: phase === 'continuous' || phase === 'auction' || phase === 'closing-auction',
-        calendarStatus, calendarSource,
+        calendarStatus, calendarSource, calendarCoverageEnd, calendarReviewedAt, calendarRenewalRequired,
         ...(nextMinute === undefined ? {} : { nextTransition: new Date(clock.localMidnight + nextMinute * 60_000).toISOString() }),
     };
 }

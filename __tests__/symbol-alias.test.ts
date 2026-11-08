@@ -178,7 +178,8 @@ describe('watchlist quote shaping preserves observation and source metadata', ()
         const entry = { symbol: HK_SYMBOL, company: 'Tencent', addedAt: '2025-01-01T00:00:00.000Z',
             group: 'Core', note: 'Durable thesis', invalidation: 'Margin decline', targetPrice: 80,
             reviewStatus: 'validated' as const, reviewedAt: '2025-01-02T00:00:00.000Z',
-            observationUpdatedAt: '2025-01-02T00:00:00.000Z', initialSnapshot: snapshot };
+            observationUpdatedAt: '2025-01-02T00:00:00.000Z', initialSnapshot: snapshot,
+            nextReviewDate: '2026-11-09', proximityPercent: 0 };
         const quote = { price: 100, prevClose: 99, change: 1, changePercent: 1.01, currency: 'HKD',
             priceBasis: 'last-trade', source: 'tencent', asOf: '2025-02-01T04:00:00.000Z', fetchedAt: '2025-02-01T04:00:01.000Z' };
         mocks.realtime.mockResolvedValue({ [HK_SYMBOL]: quote });
@@ -190,7 +191,8 @@ describe('watchlist quote shaping preserves observation and source metadata', ()
 
     it('preserves observation fields in Finnhub fallback without manufacturing snapshot or fetch time', async () => {
         const entry = { symbol: 'AAPL', company: 'Apple', addedAt: '2025-01-01T00:00:00.000Z',
-            note: 'Legacy note', reviewStatus: 'watching' as const };
+            note: 'Legacy note', reviewStatus: 'watching' as const,
+            nextReviewDate: '2026-11-10', proximityPercent: 3 };
         mocks.fetch.mockImplementation(async (url: string) => Response.json(url.includes('profile2') ? {} : { c: 10, pc: 0, d: 0, dp: 0, t: 1_730_000_000 }));
         const [result] = await finnhub.getWatchlistData([entry]);
         expect(result).toMatchObject({ ...entry, price: 10, previousClose: 0, change: 0, changePercent: 0,
@@ -209,9 +211,12 @@ describe('watchlist quote shaping preserves observation and source metadata', ()
     it('keeps Taiwan previous-close basis and Yahoo unknown basis distinct from last trade', async () => {
         mocks.realtime.mockResolvedValue({ '2330.TW': { price: 100, prevClose: 100, currency: 'TWD', priceBasis: 'previous-close', source: 'twse' } });
         mocks.yahoo.mockResolvedValue({ '2222.SR': { price: 30, prevClose: 29, currency: 'SAR' } });
-        const [tw, saudi] = await finnhub.getWatchlistData(['2330.TW', '2222.SR']);
-        expect(tw).toMatchObject({ priceBasis: 'previous-close', previousClose: 100, reviewStatus: 'watching' });
-        expect(saudi).toMatchObject({ source: 'Yahoo Finance', previousClose: 29 });
+        const [tw, saudi] = await finnhub.getWatchlistData([
+            { symbol: '2330.TW', company: 'TSMC', addedAt: '2025-01-01T00:00:00.000Z', reviewStatus: 'watching', nextReviewDate: '2026-11-09', proximityPercent: 4 },
+            { symbol: '2222.SR', company: 'Aramco', addedAt: '2025-01-01T00:00:00.000Z', reviewStatus: 'watching', nextReviewDate: '2026-11-10', proximityPercent: 0 },
+        ]);
+        expect(tw).toMatchObject({ priceBasis: 'previous-close', previousClose: 100, reviewStatus: 'watching', nextReviewDate: '2026-11-09', proximityPercent: 4 });
+        expect(saudi).toMatchObject({ source: 'Yahoo Finance', previousClose: 29, nextReviewDate: '2026-11-10', proximityPercent: 0 });
         expect(saudi.priceBasis).toBeUndefined();
         expect(saudi.asOf).toBeUndefined();
     });

@@ -1,5 +1,6 @@
 import { Schema, model, models, type Document, type Model } from 'mongoose';
 import { OBSERVATION_LIMITS, REVIEW_STATUSES, type InitialSnapshot, type ReviewStatus } from '@/lib/watchlist-observation';
+import { isMarketDate, type WatchlistJournalEntry } from '@/lib/watchlist-review';
 
 export interface WatchlistItem extends Document {
     userId: string;
@@ -14,6 +15,10 @@ export interface WatchlistItem extends Document {
     reviewedAt?: Date | null;
     observationUpdatedAt?: Date;
     initialSnapshot?: InitialSnapshot;
+    nextReviewDate?: string | null;
+    proximityPercent?: number | null;
+    journal?: WatchlistJournalEntry[];
+    journalVersion?: number;
 }
 
 const InitialSnapshotSchema = new Schema<InitialSnapshot>({
@@ -40,6 +45,12 @@ const WatchlistSchema = new Schema<WatchlistItem>(
         reviewedAt: { type: Date },
         observationUpdatedAt: { type: Date },
         initialSnapshot: { type: InitialSnapshotSchema, immutable: true },
+        nextReviewDate: { type: String, validate: (value: string | null) => value == null || isMarketDate(value) },
+        proximityPercent: { type: Number, min: 0, max: 100, validate: (value: number | null) => value == null || Number.isFinite(value) },
+        // Journal entries are validated in the server action and only ever $push-ed under CAS.
+        // Exclude the growing journal from ordinary watchlist reads.
+        journal: { type: [Schema.Types.Mixed], default: undefined, select: false },
+        journalVersion: { type: Number, min: 0 },
     },
     { timestamps: false }
 );

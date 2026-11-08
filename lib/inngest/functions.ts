@@ -199,8 +199,11 @@ export const sendWeeklyNewsSummary = inngest.createFunction(
 export const checkStockAlerts = inngest.createFunction(
     { id: 'check-stock-alerts', concurrency: 1, triggers: [{ cron: '*/5 * * * *' }] },
     async ({ step }) => step.run('sample-crossing-alerts', async () => {
-        const { runAlertCheck } = await import('@/lib/alerts/checker');
-        return runAlertCheck();
+        const { withAlertJobHeartbeat } = await import('@/lib/alerts/health');
+        return withAlertJobHeartbeat(async () => {
+            const { runAlertCheck } = await import('@/lib/alerts/checker');
+            return runAlertCheck();
+        });
     }),
 );
 

@@ -215,6 +215,7 @@ export async function getLiveQuotes(symbols: string[]) {
                     symbol: s,
                     name: s,
                     price,
+                    priceBasis: 'last-trade',
                     prevClose,
                     open,
                     high,
