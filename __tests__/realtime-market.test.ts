@@ -242,13 +242,58 @@ describe('chart interval semantics', () => {
             return new Response(`kline=${JSON.stringify({ data: { hk00700: { [`qfq${interval}`]: [daily('2026-11-06', 20), daily('2026-11-05', 10)] } } })};`);
         });
         const chart = await fetchUnifiedChartSeries('700', period);
-        expect(chart).toMatchObject({ interval, volumeUnit: 'shares', periodHigh: 25, periodLow: 5, source: 'tencent-kline' });
+        expect(chart).toMatchObject({ period, interval, adjustment: 'forward',
+            provenance: { requestedAdjustment: 'forward', requestedKey: `qfq${interval}`, actualKey: `qfq${interval}`, sourceInterval: interval },
+            volumeUnit: 'shares', periodHigh: 25, periodLow: 5, source: 'tencent-kline' });
         expect(chart?.points.map(point => point.date)).toEqual(['2026-11-05', '2026-11-06']);
+    });
+    it.each(['600519.SS', '700'])('uses the actual Tencent response key for every historical period: %s', async symbol => {
+        const code = symbol === '700' ? 'hk00700' : 'sh600519';
+        const volume = symbol === '700' ? 10 : 1000;
+        for (const [period, interval] of [['1m', 'day'], ['3m', 'day'], ['1y', 'week'], ['5y', 'month']] as const) {
+            for (const adjusted of [true, false]) {
+                mockFetch(url => {
+                    expect(url).toContain(`${code},${interval},`);
+                    expect(url).toContain(',qfq');
+                    return response({ data: { [code]: {
+                        ...(adjusted ? { [`qfq${interval}`]: [daily('2026-11-06', 10)] } : {}),
+                        [interval]: [daily('2026-11-06', 20)],
+                    } } });
+                });
+                const chart = await fetchUnifiedChartSeries(symbol, period);
+                expect(chart).toMatchObject({ period, interval, adjustment: adjusted ? 'forward' : 'unadjusted',
+                    provenance: { requestedAdjustment: 'forward', requestedKey: `qfq${interval}`,
+                        actualKey: adjusted ? `qfq${interval}` : interval, sourceInterval: interval },
+                    points: [{ close: adjusted ? 10 : 20, volume }],
+                });
+            }
+        }
+    });
+    it.each([null, [], [['2026-11-06', 1, '-', 2, 0, 10]], 'invalid'])('discloses the unadjusted fallback when qfq is unusable: %j', async qfqday => {
+        mockFetch(() => response({ data: { sh600519: { qfqday, day: [daily('2026-11-06', 20)] } } }));
+        expect(await fetchUnifiedChartSeries('600519.SS', '1m')).toMatchObject({ adjustment: 'unadjusted',
+            provenance: { requestedKey: 'qfqday', actualKey: 'day' }, points: [{ close: 20 }],
+        });
+    });
+    it('never mixes forward and unadjusted Tencent arrays to fill missing bars', async () => {
+        mockFetch(() => response({ data: { sh600519: {
+            qfqday: [daily('2026-11-06', 10), daily('2026-11-05', NaN)],
+            day: [daily('2026-11-06', 20), daily('2026-11-05', 19)],
+        } } }));
+        const chart = await fetchUnifiedChartSeries('600519.SS', '1m');
+        expect(chart?.adjustment).toBe('forward');
+        expect(chart?.points.map(point => point.close)).toEqual([10]);
+    });
+    it('does not substitute another adjustment or resolution if both expected arrays are absent', async () => {
+        mockFetch(() => response({ data: { sh600519: { hfqday: [daily('2026-11-06', 100)], week: [daily('2026-11-06', 20)] } } }));
+        expect(await fetchUnifiedChartSeries('600519.SS', '1m')).toBeNull();
     });
     it('uses actual Tencent session date and quote previous close, without fake VWAP', async () => {
         mockFetch(() => response({ data: { sh600519: { data: { date: '20261106', data: ['0931 110 1', '0930 100 0'] }, qt: { sh600519: ['', '', '', '110', '90'] } } } }));
         const chart = await fetchUnifiedChartSeries('600519.SS', '1d');
-        expect(chart).toMatchObject({ interval: 'minute', prevClose: 90, change: 20, asOf: '2026-11-06T01:31:00.000Z' });
+        expect(chart).toMatchObject({ period: '1d', interval: 'minute', adjustment: 'unadjusted',
+            provenance: { requestedAdjustment: 'unadjusted', actualKey: 'data.data', sourceInterval: 'minute' },
+            prevClose: 90, change: 20, asOf: '2026-11-06T01:31:00.000Z' });
         expect(chart?.points[0]).toMatchObject({ time: '09:30', date: '2026-11-06' });
         expect(chart?.points[0].avgPrice).toBeUndefined();
         expect(chart?.points[1].volume).toBe(100);
@@ -277,7 +322,10 @@ describe('chart interval semantics', () => {
         const chart = await fetchUnifiedChartSeries('2330.TW', period);
         expect(chart?.points.map(point => point.close)).toEqual([10, 20]);
         expect(chart?.points.map(point => point.volume)).toEqual([100000, 200000]);
-        expect(chart).toMatchObject({ periodHigh: 25, periodLow: 5, volumeUnit: 'shares' });
+        const sourceInterval = resolution === 'W' ? 'week' : resolution === 'M' ? 'month' : 'day';
+        expect(chart).toMatchObject({ period, interval: sourceInterval, adjustment: 'unknown', source: 'cnyes',
+            provenance: { requestedAdjustment: 'unknown', actualKey: 'data.c', sourceInterval },
+            periodHigh: 25, periodLow: 5, volumeUnit: 'shares' });
         expect(chart?.points[0].avgPrice).toBeUndefined();
     });
     it.each([['1d', 5833, 5833000], ['1m', 110714.587, 110714587]] as const)('normalizes verified cnYES lot volumes to shares for %s', async (period, lots, shares) => {
@@ -286,6 +334,7 @@ describe('chart interval semantics', () => {
             return url.includes('mis.twse') ? response({ msgArray: [twItem()] }) : response([]);
         });
         const chart = await fetchUnifiedChartSeries('2330.TW', period);
+        expect(chart).toMatchObject({ adjustment: 'unknown', provenance: { requestedAdjustment: 'unknown', actualKey: 'data.c' } });
         expect(chart?.volumeUnit).toBe('shares');
         expect(chart?.points[0].volume).toBeCloseTo(shares, 3);
     });
@@ -327,6 +376,22 @@ describe('chart interval semantics', () => {
             expect(await fetchUnifiedChartSeries('AAPL', period)).toMatchObject({ periodHigh: 15, periodLow: 5, prevClose: 9, points: [{ close: 10, high: 15, low: 5, volume: 0 }] });
         }
         expect(fetch).toHaveBeenCalledTimes(2);
+    });
+    it.each([
+        ['1d', '1m', 'minute'], ['5d', '5m', 'minute'], ['1m', '1d', 'day'],
+        ['3m', '1d', 'day'], ['1y', '1wk', 'week'], ['5y', '1mo', 'month'],
+    ] as const)('keeps Yahoo OHLC adjustment unknown for %s even with adjusted-close data', async (period, interval, sourceInterval) => {
+        mockFetch(url => {
+            expect(url).toContain(`interval=${interval}`);
+            return response({ chart: { result: [{ timestamp: [1793930400], indicators: {
+                quote: [{ close: [10], open: [9], high: [15], low: [5], volume: [100] }], adjclose: [{ adjclose: [8] }],
+            } }] } });
+        });
+        expect(await fetchUnifiedChartSeries('AAPL', period)).toMatchObject({ period, interval: sourceInterval,
+            source: 'yahoo', adjustment: 'unknown',
+            provenance: { requestedAdjustment: 'unknown', actualKey: 'indicators.quote', sourceInterval },
+            points: [{ close: 10, open: 9, high: 15, low: 5, volume: 100 }],
+        });
     });
     it('bounds chart upstream calls', async () => {
         vi.useFakeTimers();

@@ -2,6 +2,17 @@ import type { ChartDataPoint, ChartPeriod, ChartSeries } from '@/lib/realtime-ma
 
 export type ChartViewport = { start: string; end: string };
 
+/** Describe the actual source basis separately for every selected period. */
+export function chartProvenanceLabel(series: ChartSeries): string {
+    const adjustment = series.adjustment === 'forward' ? '前复权'
+        : series.adjustment === 'unadjusted' ? '不复权' : '复权口径未知';
+    const fallback = series.adjustment === 'unadjusted' && series.provenance.requestedAdjustment === 'forward'
+        ? '（前复权请求回退）' : '';
+    const source = ({ 'tencent-kline': '腾讯行情', 'tencent-minute': '腾讯分时', yahoo: 'Yahoo Finance', cnyes: 'cnYES 鉅亨網' } as Record<string, string>)[series.source] ?? series.source;
+    const interval = { minute: '分钟K', day: '日K', week: '周K', month: '月K' }[series.provenance.sourceInterval];
+    return `${adjustment}${fallback} · 来源: ${source} · 来源周期: ${interval}`;
+}
+
 /** Provider dates/times identify a bar independently of its position in the response. */
 export function chartBarKey(point: ChartDataPoint): string {
     return `${point.date}T${point.time}`;

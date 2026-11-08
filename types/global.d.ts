@@ -163,6 +163,29 @@ declare global {
         category: string;
         related: string;
         image?: string;
+        relatedSymbols?: string[];
+        associations?: NewsAssociation[];
+        publishedAt?: string;
+    };
+
+    type NewsAssociation = {
+        symbol: string;
+        reason: 'source-symbol' | 'source-company' | 'company-name' | 'ticker';
+        matchedText: string;
+    };
+
+    type NewsSourceStatus = {
+        id: string;
+        label: string;
+        scope: 'market' | 'targeted';
+        symbol?: string;
+        status: 'ready' | 'empty' | 'error';
+    };
+
+    type WatchlistNewsCoverage = {
+        requested: number;
+        targeted: number;
+        feedOnlySymbols: string[];
     };
 
     type WatchlistNewsProps = {

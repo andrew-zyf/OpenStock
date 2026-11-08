@@ -3,6 +3,7 @@
 import { fetchRealtimeQuotes } from "@/lib/realtime-market";
 import { identifyMarketAndCode } from "@/lib/market/instrument";
 import { CHINESE_STOCKS } from "@/lib/chinese-stocks";
+import { normalizeName, aliasesFor, relevant, traditionalCompanyQuery } from '@/lib/news/relevance';
 
 export type StockNewsArticle = {
     id: string;
@@ -100,45 +101,6 @@ async function request(url: string, revalidate: number, jsonp = false): Promise<
         if (!match) throw new Error('Invalid JSONP');
         return record(JSON.parse(match[1]));
     }, REQUEST_TIMEOUT, () => controller.abort());
-}
-
-// Normalize company names, never broad sector keywords or individual characters.
-const NAME_CHARACTERS: Record<string, string> = {
-    積: '积', 電: '电', 聯: '联', 發: '发', 鴻: '鸿', 達: '达', 廣: '广', 長: '长', 榮: '荣', 國: '国',
-    華: '华', 豐: '丰', 騰: '腾', 訊: '讯', 團: '团', 銀: '银', 貴: '贵', 寧: '宁', 時: '时', 藥: '药',
-    業: '业', 東: '东', 財: '财', 匯: '汇', 龍: '龙', 興: '兴', 視: '视', 創: '创', 緯: '纬', 緻: '致',
-    萬: '万', 寶: '宝', 險: '险', 灣: '湾', 體: '体', 製: '制', 臺: '台', 股: '股', 醫: '医', 療: '疗',
-};
-function normalizeName(value: string): string {
-    return value.replace(/[㐀-鿿]/g, (char) => NAME_CHARACTERS[char] || char).toLowerCase();
-}
-
-function aliasesFor(symbol: string, name: string): string[] {
-    const known = CHINESE_STOCKS.find((stock) => identifyMarketAndCode(stock.symbol).normalizedSymbol === symbol);
-    const names = [name, known?.name || ''];
-    const aliases = names.flatMap((value) => [
-        value.replace(/\s*[（(][\s\S]*?[）)]\s*/g, '').trim(),
-        ...(value.match(/[（(]([^）)]+)[）)]/)?.[1].split(/\s*\/\s*/) || []),
-    ]);
-    // Numeric tickers require boundaries; US tickers require token boundaries.
-    aliases.push(symbol.split('.')[0]);
-    return [...new Set(aliases.map(normalizeName).filter((alias) => alias.length >= 2))];
-}
-
-function relevant(title: string, summary: string, aliases: string[], source: 'eastmoney' | 'cnyes'): boolean {
-    // cnYES summaries can carry entity context; EM search snippets are often loose matches.
-    const content = normalizeName(source === 'cnyes' ? `${title} ${summary}` : title);
-    return aliases.some((alias) => {
-        if (/^[a-z0-9 .&,-]+$/i.test(alias)) {
-            const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            if (/^\d+$/.test(alias)) {
-                // Bare figures in weather, volume, or revenue headlines are not stock references.
-                return new RegExp(`(?:[（(]\\s*${escaped}(?:\\.(?:tw|two|ss|sz|hk))?\\s*[）)]|(?:twse|tpex|sse|szse|hkex):${escaped}\\b|\\b${escaped}\\.(?:tw|two|ss|sz|hk)\\b)`, 'i').test(content);
-            }
-            return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(content);
-        }
-        return content.includes(alias);
-    });
 }
 
 function validUrl(value: unknown): string {
@@ -292,7 +254,7 @@ export async function getStockIntelligence(rawSymbol: string): Promise<StockInte
     }
     if (meta.market === 'tw') {
         // Preserve source spelling: simplified-to-traditional conversion is ambiguous (致 / 緻).
-        const traditionalName = quote?.name ? name : [...name].map((char) => char === '台' || char === '致' ? char : Object.keys(NAME_CHARACTERS).find((key) => NAME_CHARACTERS[key] === char) || char).join('');
+        const traditionalName = quote?.name ? name : traditionalCompanyQuery(name);
         const [cnyes, em] = await Promise.all([fetchCnyesTwStockIntel(traditionalName, aliases), newsRequest]);
         const news = unique([...cnyes.news, ...em.items], 8);
         return { symbol: meta.normalizedSymbol, name, news, reports: [], announcements: cnyes.announcements,

@@ -101,8 +101,8 @@ export const sendNewsSummaryEmail = async (
 };
 
 export const sendStockAlertEmail = async (
-    { email, symbol, currentPrice, targetPrice, condition }:
-    { email: string; symbol: string; currentPrice: number; targetPrice: number; condition: 'ABOVE' | 'BELOW' }
+    { email, symbol, currentPrice, targetPrice, condition, currency, asOf, source }:
+    { email: string; symbol: string; currentPrice: number; targetPrice: number; condition: 'ABOVE' | 'BELOW'; currency?: string; asOf?: string; source?: string }
 ) => {
     try {
         if (!transporter) {
@@ -111,22 +111,22 @@ export const sendStockAlertEmail = async (
         }
 
         const isUpper = condition === 'ABOVE';
-        // Binance pairs are quoted in USDT, everything else Finnhub prices here is USD
         const money = (value: number) => symbol.startsWith('BINANCE:')
             ? `${value.toLocaleString('en-US', { maximumFractionDigits: value < 1 ? 6 : 2 })} USDT`
-            : formatPrice(value);
+            : formatPrice(value, currency ?? 'USD');
+        const timestamp = asOf ? `${new Date(asOf).toUTCString()}${source ? ` · ${source}` : ''}` : new Date().toUTCString();
         const htmlTemplate = (isUpper ? STOCK_ALERT_UPPER_EMAIL_TEMPLATE : STOCK_ALERT_LOWER_EMAIL_TEMPLATE)
             .replaceAll('{{symbol}}', escapeHtml(symbol))
             .replaceAll('{{company}}', '') // Alerts don't store the company name
             .replaceAll('{{currentPrice}}', money(currentPrice))
             .replaceAll('{{targetPrice}}', money(targetPrice))
-            .replaceAll('{{timestamp}}', new Date().toUTCString());
+            .replaceAll('{{timestamp}}', escapeHtml(timestamp));
 
         const mailOptions = {
             from: `"Openstock" <${process.env.NODEMAILER_EMAIL}>`,
             to: email,
             subject: `🔔 Price Alert: ${symbol} is ${isUpper ? 'above' : 'below'} ${money(targetPrice)}`,
-            text: `${symbol} is now ${money(currentPrice)}, ${isUpper ? 'above' : 'below'} your target of ${money(targetPrice)}.`,
+            text: `${symbol} was sampled at ${money(currentPrice)}, ${isUpper ? 'at or above' : 'at or below'} your target of ${money(targetPrice)}. Source time: ${timestamp}.`,
             html: htmlTemplate,
         };
 

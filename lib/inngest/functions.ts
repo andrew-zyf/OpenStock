@@ -1,6 +1,6 @@
 import { inngest } from "@/lib/inngest/client";
 import { NEWS_SUMMARY_EMAIL_PROMPT, PERSONALIZED_WELCOME_EMAIL_PROMPT } from "@/lib/inngest/prompts";
-import { sendNewsSummaryEmail, sendStockAlertEmail, sendWelcomeEmail } from "@/lib/nodemailer";
+import { sendNewsSummaryEmail, sendWelcomeEmail } from "@/lib/nodemailer";
 import { getAllUsersForNewsEmail, getWatchlistSymbolsByEmail } from "@/lib/actions/user.actions";
 import { getNews } from "@/lib/actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
@@ -197,136 +197,11 @@ export const sendWeeklyNewsSummary = inngest.createFunction(
 )
 
 export const checkStockAlerts = inngest.createFunction(
-    { id: 'check-stock-alerts', concurrency: 1, triggers: [{ cron: '*/5 * * * *' }] }, // Every 5 minutes; one run at a time so an alert is never emailed twice
-    async ({ step }) => {
-        // Step 1: Fetch active alerts
-        const activeAlerts = await step.run('fetch-active-alerts', async () => {
-            // Dynamic import to avoid circular dep issues if any, or just standard import
-            const { connectToDatabase } = await import("@/database/mongoose");
-            const { Alert } = await import("@/database/models/alert.model");
-
-            await connectToDatabase();
-            const now = new Date();
-
-            const alerts = await Alert.find({
-                active: true,
-                triggered: false,
-                expiresAt: { $gt: now }
-            }).lean();
-            // Inngest persists step results as JSON; pass only the alert fields used below.
-            return alerts.map((alert) => ({
-                _id: String(alert._id),
-                userId: alert.userId,
-                symbol: alert.symbol,
-                targetPrice: alert.targetPrice,
-                condition: alert.condition,
-            }));
-        });
-
-        if (!activeAlerts || activeAlerts.length === 0) {
-            return { message: 'No active alerts to check.' };
-        }
-
-        // Step 2: Group by symbol
-        const symbols = [...new Set(activeAlerts.map((a) => a.symbol))];
-
-        // Step 3: Fetch prices
-        const prices = await step.run('fetch-prices', async () => {
-            const { getQuote } = await import("@/lib/actions/finnhub.actions");
-            const priceMap: Record<string, number> = {};
-
-            // Process in chunks to be safe
-            for (const sym of symbols) {
-                try {
-                    const quote = await getQuote(sym as string);
-                    if (quote && quote.c) {
-                        priceMap[sym as string] = quote.c;
-                    }
-                } catch (e) {
-                    console.error(`Failed to fetch price for ${sym}`, e);
-                }
-            }
-            return priceMap;
-        });
-
-        // Step 4: Check conditions
-        type TriggeredAlert = { alert: (typeof activeAlerts)[number]; currentPrice: number };
-        const triggeredAlerts: TriggeredAlert[] = [];
-
-        for (const alert of activeAlerts) {
-            const currentPrice = prices[alert.symbol];
-            if (!currentPrice) continue;
-
-            let isTriggered = false;
-            // Simple check
-            if (alert.condition === 'ABOVE' && currentPrice >= alert.targetPrice) {
-                isTriggered = true;
-            } else if (alert.condition === 'BELOW' && currentPrice <= alert.targetPrice) {
-                isTriggered = true;
-            }
-
-            if (isTriggered) {
-                triggeredAlerts.push({ alert, currentPrice });
-            }
-        }
-
-        // Step 5: Email the alert owner, then mark triggered
-        if (triggeredAlerts.length > 0) {
-            await step.run('process-triggered-alerts', async () => {
-                const { connectToDatabase } = await import("@/database/mongoose");
-                const { Alert } = await import("@/database/models/alert.model");
-                const mongoose = await connectToDatabase();
-                const db = mongoose.connection.db;
-                if (!db) throw new Error("No DB Connection");
-
-                for (const { alert, currentPrice } of triggeredAlerts) {
-                    // Claim the alert atomically before emailing. Inngest's concurrency limits steps, not
-                    // whole runs, so two overlapping runs can hold the same alert; only one wins this update.
-                    const claimed = await Alert.findOneAndUpdate(
-                        { _id: alert._id, active: true, triggered: false },
-                        { $set: { triggered: true, active: false } },
-                    );
-                    if (!claimed) continue;
-                    const release = () => Alert.findByIdAndUpdate(alert._id, { triggered: false, active: true }).catch(() => {});
-
-                    console.log(`🚀 ALERT FIRED: ${alert.symbol} is ${currentPrice} (${alert.condition} ${alert.targetPrice})`);
-
-                    // Per-alert try/catch: a failure releases the claim so the next 5-min run retries it,
-                    // and never throws the step (a step retry would re-email alerts already sent in this loop).
-                    try {
-                        // Better Auth users may be keyed by `id` or `_id` (see getWatchlistSymbolsByEmail)
-                        const user = await db.collection('user').findOne<{ email?: string }>(
-                            mongoose.isValidObjectId(alert.userId)
-                                ? { $or: [{ id: alert.userId }, { _id: new mongoose.Types.ObjectId(alert.userId) }] }
-                                : { id: alert.userId }
-                        );
-
-                        if (user?.email) {
-                            const result = await sendStockAlertEmail({
-                                email: user.email,
-                                symbol: alert.symbol,
-                                currentPrice,
-                                targetPrice: alert.targetPrice,
-                                condition: alert.condition,
-                            });
-                            // Email not configured: release so the alert fires once email works
-                            if (result.status === 'skipped') await release();
-                        } else {
-                            console.warn(`⚠️ No email for user ${alert.userId}; closing alert ${alert._id} without notifying`);
-                        }
-                    } catch (error) {
-                        await release();
-                        console.error(`❌ Failed to process alert ${alert._id} (${alert.symbol}); will retry next run`, error);
-                    }
-                }
-            });
-        }
-
-        return {
-            processed: activeAlerts.length,
-            triggered: triggeredAlerts.length
-        };
-    }
+    { id: 'check-stock-alerts', concurrency: 1, triggers: [{ cron: '*/5 * * * *' }] },
+    async ({ step }) => step.run('sample-crossing-alerts', async () => {
+        const { runAlertCheck } = await import('@/lib/alerts/checker');
+        return runAlertCheck();
+    }),
 );
 
 export const checkInactiveUsers = inngest.createFunction(

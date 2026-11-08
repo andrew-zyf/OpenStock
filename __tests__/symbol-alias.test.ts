@@ -97,7 +97,7 @@ describe('canonical symbol identity', () => {
 describe('watchlist aliases without a database migration', () => {
     it('normalizes new writes and only sets insertion metadata', async () => {
         const result = await watchlist.addToWatchlist(' hkex:700 ', 'Tencent');
-        expect(result.symbol).toBe(HK_SYMBOL);
+        expect(result).toMatchObject({ symbol: HK_SYMBOL });
         expect(mocks.findOneAndUpdate).toHaveBeenCalledWith(
             { userId: 'user-123', symbol: HK_SYMBOL },
             { $setOnInsert: { userId: 'user-123', symbol: HK_SYMBOL, company: 'Tencent', addedAt: expect.any(Date) } },
@@ -109,7 +109,9 @@ describe('watchlist aliases without a database migration', () => {
         const saved = row('0700.HK', { company: 'Saved Tencent', note: 'keep me' });
         mocks.rows = [saved];
         mocks.countDocuments.mockResolvedValue(50);
-        expect(await watchlist.addToWatchlist(HK_SYMBOL, 'Replacement')).toEqual({ ...saved, symbol: HK_SYMBOL });
+        expect(await watchlist.addToWatchlist(HK_SYMBOL, 'Replacement')).toMatchObject({
+            symbol: HK_SYMBOL, company: saved.company, addedAt: saved.addedAt, note: saved.note, reviewStatus: 'watching',
+        });
         expect(mocks.findOneAndUpdate).not.toHaveBeenCalled();
         expect(mocks.rows).toEqual([saved]);
     });
@@ -166,6 +168,52 @@ describe('search merges canonical symbols across providers', () => {
         expect(result.find((item) => item.symbol === HK_SYMBOL)?.name).toBe('Tencent');
         expect(result.find((item) => item.symbol === '920001.BJ')?.exchange).toBe('北交所 A股');
         expect(result.find((item) => item.symbol === 'AAPL')?.exchange).toBe('NASDAQ');
+    });
+});
+
+describe('watchlist quote shaping preserves observation and source metadata', () => {
+    it('retains saved fields and source-valid native quote metadata without changing the snapshot', async () => {
+        const snapshot = { price: 90, currency: 'HKD', source: 'tencent', asOf: '2025-01-01T04:00:00.000Z',
+            fetchedAt: '2025-01-01T04:00:01.000Z', priceBasis: 'last-trade' as const, adjustment: 'unadjusted' as const };
+        const entry = { symbol: HK_SYMBOL, company: 'Tencent', addedAt: '2025-01-01T00:00:00.000Z',
+            group: 'Core', note: 'Durable thesis', invalidation: 'Margin decline', targetPrice: 80,
+            reviewStatus: 'validated' as const, reviewedAt: '2025-01-02T00:00:00.000Z',
+            observationUpdatedAt: '2025-01-02T00:00:00.000Z', initialSnapshot: snapshot };
+        const quote = { price: 100, prevClose: 99, change: 1, changePercent: 1.01, currency: 'HKD',
+            priceBasis: 'last-trade', source: 'tencent', asOf: '2025-02-01T04:00:00.000Z', fetchedAt: '2025-02-01T04:00:01.000Z' };
+        mocks.realtime.mockResolvedValue({ [HK_SYMBOL]: quote });
+        const [result] = await finnhub.getWatchlistData([entry]);
+        expect(result).toMatchObject({ ...entry, price: 100, previousClose: 99, priceBasis: 'last-trade',
+            source: 'tencent', asOf: quote.asOf, fetchedAt: quote.fetchedAt });
+        expect(entry.initialSnapshot).toEqual(snapshot);
+    });
+
+    it('preserves observation fields in Finnhub fallback without manufacturing snapshot or fetch time', async () => {
+        const entry = { symbol: 'AAPL', company: 'Apple', addedAt: '2025-01-01T00:00:00.000Z',
+            note: 'Legacy note', reviewStatus: 'watching' as const };
+        mocks.fetch.mockImplementation(async (url: string) => Response.json(url.includes('profile2') ? {} : { c: 10, pc: 0, d: 0, dp: 0, t: 1_730_000_000 }));
+        const [result] = await finnhub.getWatchlistData([entry]);
+        expect(result).toMatchObject({ ...entry, price: 10, previousClose: 0, change: 0, changePercent: 0,
+            source: 'Finnhub', priceBasis: 'last-trade', asOf: new Date(1_730_000_000_000).toISOString() });
+        expect(result.initialSnapshot).toBeUndefined();
+        expect(result.fetchedAt).toBeUndefined();
+    });
+
+    it.each([undefined, 0, 1e20])('does not invent or overflow a source timestamp for %s', async (timestamp) => {
+        mocks.fetch.mockImplementation(async (url: string) => Response.json(url.includes('profile2') ? {} : { c: 10, t: timestamp }));
+        const [result] = await finnhub.getWatchlistData(['AAPL']);
+        expect(result.price).toBe(10);
+        expect(result.asOf).toBeUndefined();
+    });
+
+    it('keeps Taiwan previous-close basis and Yahoo unknown basis distinct from last trade', async () => {
+        mocks.realtime.mockResolvedValue({ '2330.TW': { price: 100, prevClose: 100, currency: 'TWD', priceBasis: 'previous-close', source: 'twse' } });
+        mocks.yahoo.mockResolvedValue({ '2222.SR': { price: 30, prevClose: 29, currency: 'SAR' } });
+        const [tw, saudi] = await finnhub.getWatchlistData(['2330.TW', '2222.SR']);
+        expect(tw).toMatchObject({ priceBasis: 'previous-close', previousClose: 100, reviewStatus: 'watching' });
+        expect(saudi).toMatchObject({ source: 'Yahoo Finance', previousClose: 29 });
+        expect(saudi.priceBasis).toBeUndefined();
+        expect(saudi.asOf).toBeUndefined();
     });
 });
 

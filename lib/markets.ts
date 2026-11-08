@@ -1,5 +1,8 @@
 import { isInternationalSymbol } from "@/lib/utils";
 import { identifyMarketAndCode } from "@/lib/market/instrument";
+import { getMarketSession } from "@/lib/market/sessions";
+
+export { getMarketSession, getInstrumentSession } from "@/lib/market/sessions";
 
 export type MarketId = 'us' | 'cn' | 'hk' | 'tw';
 
@@ -102,20 +105,8 @@ export const hasFinnhubQuotes = (symbol: string) => {
     return !upper.includes(':') && meta.market === 'us' && !isInternationalSymbol(meta.normalizedSymbol);
 };
 
-// Is the market trading right now, in its own time zone? Holidays aren't modelled.
+// Scheduled regular sessions, including lunch breaks and bounded holiday coverage.
+// Consumers needing verification/source information should use getMarketSession.
 export function isMarketOpen(market: Market, date = new Date()) {
-    if (market.hours === '24/7') return true;
-    const parts = Object.fromEntries(
-        new Intl.DateTimeFormat('en-US', { timeZone: market.timeZone, weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
-            .formatToParts(date).map((p) => [p.type, p.value]),
-    );
-    const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
-    const minutes = Number(parts.hour) * 60 + Number(parts.minute);
-    if (market.hours === '24/5') {
-        if (day === 6) return false;
-        if (day === 0) return minutes >= hm(17);
-        if (day === 5) return minutes < hm(17);
-        return true;
-    }
-    return (market.tradingDays ?? [1, 2, 3, 4, 5]).includes(day) && minutes >= market.hours.open && minutes < market.hours.close;
+    return getMarketSession(market, date).isTrading;
 }

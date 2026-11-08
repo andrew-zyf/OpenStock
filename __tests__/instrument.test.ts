@@ -33,10 +33,10 @@ describe('shared instrument identity', () => {
     });
     it('matches native backend capabilities rather than promising every exchange feature', () => {
         expect(getInstrumentCapabilities('AAPL')).toEqual({ profile: false, financials: false, alerts: true, depth: false, ticks: false, capitalFlow: false });
-        expect(getInstrumentCapabilities('00700.HK')).toEqual({ profile: true, financials: true, alerts: false, depth: false, ticks: true, capitalFlow: true });
-        expect(getInstrumentCapabilities('2330.TW')).toEqual({ profile: true, financials: true, alerts: false, depth: true, ticks: true, capitalFlow: false });
-        expect(getInstrumentCapabilities('6488.TWO')).toMatchObject({ profile: false, financials: false, alerts: false, depth: true, ticks: true, capitalFlow: false });
-        expect(getInstrumentCapabilities('600519.SS')).toMatchObject({ profile: true, financials: true, alerts: false, depth: true, ticks: true, capitalFlow: true });
+        expect(getInstrumentCapabilities('00700.HK')).toEqual({ profile: true, financials: true, alerts: true, depth: false, ticks: true, capitalFlow: true });
+        expect(getInstrumentCapabilities('2330.TW')).toEqual({ profile: true, financials: true, alerts: true, depth: true, ticks: true, capitalFlow: false });
+        expect(getInstrumentCapabilities('6488.TWO')).toMatchObject({ profile: false, financials: false, alerts: true, depth: true, ticks: true, capitalFlow: false });
+        expect(getInstrumentCapabilities('600519.SS')).toMatchObject({ profile: true, financials: true, alerts: true, depth: true, ticks: true, capitalFlow: true });
         expect(getInstrumentCapabilities('???')).toEqual({ profile: false, financials: false, alerts: false, depth: false, ticks: false, capitalFlow: false });
     });
     it('distinguishes numeric absence from actual zero', () => {

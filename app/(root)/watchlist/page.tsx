@@ -3,13 +3,15 @@ import { Plus } from 'lucide-react';
 import { getUserWatchlist } from '@/lib/actions/watchlist.actions';
 import { getUserAlerts } from '@/lib/actions/alert.actions';
 import { alertsEnabled } from '@/lib/market-data';
-import { getNews, getWatchlistData } from '@/lib/actions/finnhub.actions';
+import { getWatchlistData } from '@/lib/actions/finnhub.actions';
+import { getWatchlistNews, getMultiMarketNews } from '@/lib/actions/china-market.actions';
 import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import AlertsPanel from '@/components/watchlist/AlertsPanel';
 import NewsList from '@/components/watchlist/NewsList';
 import Panel from '@/components/Panel';
 import DataFreshness from '@/components/DataFreshness';
 import { SearchButton } from '@/components/SearchCommand';
+import type { WatchlistEntry } from '@/lib/watchlist-observation';
 
 const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     <div className="row-list" aria-busy="true">
@@ -23,12 +25,13 @@ const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     </div>
 );
 
-async function Symbols({ symbols }: { symbols: string[] }) {
-    return <WatchlistTable initialRows={await getWatchlistData(symbols)} />;
+async function Symbols({ items }: { items: WatchlistEntry[] }) {
+    return <WatchlistTable initialRows={await getWatchlistData(items)} />;
 }
 
-async function News({ symbols }: { symbols: string[] }) {
-    return <NewsList news={await getNews(symbols).catch(() => [] as MarketNewsArticle[])} />;
+async function News({ items }: { items: { symbol: string; company?: string }[] }) {
+    const [result, marketNews] = await Promise.all([getWatchlistNews(items), getMultiMarketNews()]);
+    return <NewsList news={result.articles} marketNews={marketNews} status={result.status} sources={result.sources} coverage={result.coverage} />;
 }
 
 // DB reads render first; everything from Finnhub streams in behind skeletons.
@@ -51,19 +54,19 @@ export default async function WatchlistPage() {
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="股票列表" sub="点击行进入查看 K 线图表、技术指标与财务数据">
+                    <Panel title="股票列表" sub="记录观察理由与失效条件；行情、同市场基准和相关资讯辅助复核">
                         <Suspense fallback={<RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />}>
-                            <Symbols symbols={symbols} />
+                            <Symbols items={items} />
                         </Suspense>
                     </Panel>
-                    <Panel title="自选资讯" sub={symbols.length ? '关注标的的最新市场动态' : '市场综合资讯'}>
+                    <Panel title="自选资讯" sub="仅展示匹配关注标的的资讯，可切换全市场动态">
                         <Suspense fallback={<RowsSkeleton />}>
-                            <News symbols={symbols} />
+                            <News items={items} />
                         </Suspense>
                     </Panel>
                 </div>
 
-                <Panel title="价格预警" sub={alertsEnabled ? `${activeAlerts} 条生效中 · 每 5 分钟检测` : 'OpenStock 预警服务'} className="self-start">
+                <Panel title="价格预警" sub={alertsEnabled ? `${activeAlerts} 条未触发 · 后台检查依赖任务配置` : 'OpenStock 预警服务'} className="self-start">
                     <AlertsPanel alerts={alerts} />
                 </Panel>
             </div>

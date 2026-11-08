@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CandlestickChart, Clock, LineChart, ZoomIn, ZoomOut, RotateCcw, MoveHorizontal } from "lucide-react";
 import Panel from "@/components/Panel";
 import ChangePill from "@/components/ChangePill";
@@ -10,7 +10,7 @@ import type { ChartDataPoint } from "@/lib/realtime-market";
 import { useMarketResource } from "@/hooks/useMarketResource";
 import { identifyMarketAndCode } from "@/lib/market/instrument";
 import {
-    anchorChartViewport, chartBarKey, chartMovingAverage as calcMA, chartPointMetrics,
+    anchorChartViewport, chartBarKey, chartMovingAverage as calcMA, chartPointMetrics, chartProvenanceLabel,
     chartRSI as calcRSI, formatChartVolume as formatVol, resolveChartViewport,
     sourcedVwap, type ChartViewport,
 } from "@/lib/market/chart-view";
@@ -117,6 +117,7 @@ function calcKDJ(points: ChartDataPoint[], n = 9) {
 }
 
 export default function YahooStockChart({ symbol }: { symbol: string; tvSymbol?: string }) {
+    const provenanceId = useId();
     const [period, setPeriod] = useState<Period>('1d');
     const [chartStyle, setChartStyle] = useState<ChartStyle>('line');
     const [mainOverlay, setMainOverlay] = useState<MainOverlay>('ma');
@@ -720,8 +721,8 @@ export default function YahooStockChart({ symbol }: { symbol: string; tvSymbol?:
                 </div>
 
                 {chartData && (
-                    <p className="mono text-[10px] text-faint">
-                        来源: {chartData.source} · 行情时间: {chartData.asOf ?? '来源未提供'}
+                    <p id={provenanceId} className="text-xs leading-relaxed text-muted-foreground">
+                        {chartProvenanceLabel(chartData)} · 行情时间: {chartData.asOf ?? '来源未提供'}
                     </p>
                 )}
 
@@ -877,6 +878,7 @@ export default function YahooStockChart({ symbol }: { symbol: string; tvSymbol?:
                             className="size-full overflow-visible select-none cursor-crosshair active:cursor-grabbing"
                             preserveAspectRatio="none"
                             role="img"
+                            aria-describedby={chartData ? provenanceId : undefined}
                             tabIndex={0}
                             aria-label={`${symbol} ${timeframe}价格与${subIndicator.toUpperCase()}图。左右方向键查看数据，鼠标滚轮缩放，按住拖动平移。${activeTime} 收盘价 ${activePrice ?? '未提供'}。`}
                             onKeyDown={(event) => {

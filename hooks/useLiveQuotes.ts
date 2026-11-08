@@ -20,6 +20,31 @@ export function mergeQuoteSnapshot(symbols: string[], data: LiveQuoteMap, previo
     ]));
 }
 
+// The endpoint accepts 25 symbols. Keep at most two requests in flight, including benchmarks.
+export async function fetchQuoteBatches(symbols: string[], previous: LiveQuoteMap = {}): Promise<LiveQuoteMap> {
+    const unique = [...new Set(symbols)];
+    const batches: string[][] = [];
+    for (let index = 0; index < unique.length; index += 25) batches.push(unique.slice(index, index + 25));
+    const data: LiveQuoteMap = {};
+    let next = 0;
+    async function worker() {
+        while (next < batches.length) {
+            const batch = batches[next++];
+            try {
+                const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(batch.join(','))}`);
+                if (!response.ok) continue;
+                const quotes: LiveQuoteMap = await response.json();
+                for (const symbol of batch) data[symbol] = quotes[symbol] ?? null;
+            } catch {
+                // Other batches may still succeed; absent symbols retain their own last good quote.
+            }
+        }
+    }
+    await Promise.all(Array.from({ length: Math.min(2, batches.length) }, worker));
+    if (!Object.values(data).some((quote) => quote != null)) throw new Error('行情暂不可用');
+    return mergeQuoteSnapshot(unique, data, previous);
+}
+
 export function useLiveQuoteResource(symbols: string[], intervalMs = QUOTE_REFRESH_MS.realtime, initialData?: LiveQuoteMap) {
     const key = [...new Set(symbols)].join(',');
     const previous = useRef({ key, data: initialData ?? {} });
@@ -27,12 +52,8 @@ export function useLiveQuoteResource(symbols: string[], intervalMs = QUOTE_REFRE
         key: `quotes:${key}`, enabled: Boolean(key), initialData,
         intervalMs: isRealtime ? intervalMs : QUOTE_REFRESH_MS.cached,
         loader: async () => {
-            const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(key)}`);
-            if (!response.ok) throw new Error(`行情请求失败 (${response.status})`);
-            const data: LiveQuoteMap = await response.json();
-            if (!Object.values(data).some((quote) => quote != null)) throw new Error('行情暂不可用');
             const prior = previous.current.key === key ? previous.current.data : initialData ?? {};
-            return mergeQuoteSnapshot(key.split(','), data, prior);
+            return fetchQuoteBatches(key.split(','), prior);
         },
     });
     useEffect(() => { previous.current = { key, data: resource.data ?? {} }; }, [key, resource.data]);

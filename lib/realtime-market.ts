@@ -54,11 +54,22 @@ export type ChartDataPoint = {
     avgPrice?: number;
 };
 export type ChartPeriod = '1d' | '5d' | '1m' | '3m' | '1y' | '5y';
+/** Actual OHLC basis, never inferred solely from a requested adjustment. */
+export type ChartAdjustment = 'forward' | 'unadjusted' | 'unknown';
+export type ChartInterval = 'minute' | 'day' | 'week' | 'month';
+export type ChartProvenance = {
+    requestedAdjustment: ChartAdjustment;
+    requestedKey?: string;
+    actualKey: string;
+    sourceInterval: ChartInterval;
+};
 export type ChartSeries = SourceMetadata & {
     symbol: string;
     market: MarketType;
     period: ChartPeriod;
-    interval: 'minute' | 'day' | 'week' | 'month';
+    interval: ChartInterval;
+    adjustment: ChartAdjustment;
+    provenance: ChartProvenance;
     volumeUnit: 'shares';
     points: ChartDataPoint[];
     periodHigh: number;
@@ -289,7 +300,7 @@ export async function fetchRealtimeQuotes(symbols: string[]): Promise<Record<str
     return results;
 }
 
-function chartSeries(meta: InstrumentIdentity, period: ChartPeriod, points: ChartDataPoint[], source: string, prevClose?: number, asOf?: string, session?: Partial<Pick<UnifiedQuote, 'open' | 'high' | 'low' | 'volume' | 'turnover' | 'turnoverRate' | 'amplitude' | 'pe'>> | null): ChartSeries | null {
+function chartSeries(meta: InstrumentIdentity, period: ChartPeriod, points: ChartDataPoint[], source: string, basis: Pick<ChartSeries, 'adjustment' | 'provenance'>, prevClose?: number, asOf?: string, session?: Partial<Pick<UnifiedQuote, 'open' | 'high' | 'low' | 'volume' | 'turnover' | 'turnoverRate' | 'amplitude' | 'pe'>> | null): ChartSeries | null {
     points.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
     if (!points.length) return null;
     if (period === '1y' || period === '5y') points = points.slice(period === '1y' ? -172 : -180);
@@ -301,7 +312,7 @@ function chartSeries(meta: InstrumentIdentity, period: ChartPeriod, points: Char
     const periodLow = Math.min(...points.map(point => point.low ?? point.close), ...(stats?.low !== undefined ? [stats.low] : []));
     return {
         symbol: meta.normalizedSymbol, market: meta.market, period,
-        interval: period === '1d' || period === '5d' ? 'minute' : period === '1y' ? 'week' : period === '5y' ? 'month' : 'day',
+        interval: basis.provenance.sourceInterval, ...basis,
         volumeUnit: 'shares', points,
         periodHigh, periodLow,
         open: stats?.open, high: stats?.high, low: stats?.low, volume: stats?.volume,
@@ -334,7 +345,11 @@ export async function fetchUnifiedChartSeries(rawSymbol: string, period: ChartPe
                     open: numeric(candles.open?.[i]), high: numeric(candles.high?.[i]), low: numeric(candles.low?.[i]), volume: numeric(candles.volume?.[i]) });
                 lastTimestamp = Math.max(lastTimestamp ?? timestamp, timestamp);
             }
-            return chartSeries(meta, period, points, 'yahoo', numeric(result.meta?.chartPreviousClose) ?? numeric(result.meta?.previousClose), lastTimestamp === undefined ? undefined : new Date(lastTimestamp * 1000).toISOString());
+            // quote OHLC is used as returned; adjclose alone cannot verify all OHLC adjustment.
+            return chartSeries(meta, period, points, 'yahoo', {
+                adjustment: 'unknown', provenance: { requestedAdjustment: 'unknown', actualKey: 'indicators.quote',
+                    sourceInterval: interval === '1wk' ? 'week' : interval === '1mo' ? 'month' : interval === '1d' ? 'day' : 'minute' },
+            }, numeric(result.meta?.chartPreviousClose) ?? numeric(result.meta?.previousClose), lastTimestamp === undefined ? undefined : new Date(lastTimestamp * 1000).toISOString());
         }
         if (meta.market === 'cn' || meta.market === 'hk') {
             if (!meta.tencentCode) return null;
@@ -369,24 +384,34 @@ export async function fetchUnifiedChartSeries(rawSymbol: string, period: ChartPe
                     volume: scale(parts[6], meta.market === 'cn' ? 100 : 1), turnover: scale(parts[37], meta.market === 'cn' ? 10000 : 1),
                     turnoverRate: numeric(parts[meta.market === 'hk' ? 59 : 38]), amplitude: numeric(parts[43]), pe: numeric(parts[39]),
                 } : undefined;
-                return chartSeries(meta, period, points, 'tencent-minute', prevClose, last ? sourceTime(`${last.date} ${last.time}:00`, meta.market) : undefined, session);
+                return chartSeries(meta, period, points, 'tencent-minute', {
+                    adjustment: 'unadjusted', provenance: { requestedAdjustment: 'unadjusted', actualKey: 'data.data', sourceInterval: 'minute' },
+                }, prevClose, last ? sourceTime(`${last.date} ${last.time}:00`, meta.market) : undefined, session);
             }
             const interval = period === '1y' ? 'week' : period === '5y' ? 'month' : 'day';
             const count = { '1m': 160, '3m': 240, '1y': 172, '5y': 180 }[period];
             const endpoint = meta.market === 'hk' ? 'hkfqkline' : 'fqkline';
             const data = await request(`https://web.ifzq.gtimg.cn/appstock/app/${endpoint}/get?_var=kline&param=${code},${interval},,,${count},qfq`, async response => JSON.parse((await response.text()).replace(/^\s*kline=/, '').replace(/;\s*$/, '')), 3600);
             const record = data?.data?.[code];
-            const raw = record?.[`qfq${interval}`] ?? record?.[interval];
-            if (!Array.isArray(raw)) return null;
-            const points: ChartDataPoint[] = [];
-            for (const row of raw) {
-                if (!Array.isArray(row)) continue;
-                const close = numeric(row[2]);
-                const date = String(row[0]);
-                if (close === undefined || close <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-                points.push({ time: date, date, open: numeric(row[1]), close, high: numeric(row[3]), low: numeric(row[4]), volume: scale(row[5], meta.market === 'cn' ? 100 : 1) });
+            const requestedKey = `qfq${interval}`;
+            // Select one usable source array for the entire series; never mix adjustment bases.
+            for (const actualKey of [requestedKey, interval]) {
+                const raw = record?.[actualKey];
+                if (!Array.isArray(raw)) continue;
+                const points: ChartDataPoint[] = [];
+                for (const row of raw) {
+                    if (!Array.isArray(row)) continue;
+                    const close = numeric(row[2]);
+                    const date = String(row[0]);
+                    if (close === undefined || close <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+                    points.push({ time: date, date, open: numeric(row[1]), close, high: numeric(row[3]), low: numeric(row[4]), volume: scale(row[5], meta.market === 'cn' ? 100 : 1) });
+                }
+                if (points.length) return chartSeries(meta, period, points, 'tencent-kline', {
+                    adjustment: actualKey === requestedKey ? 'forward' : 'unadjusted',
+                    provenance: { requestedAdjustment: 'forward', requestedKey, actualKey, sourceInterval: interval },
+                });
             }
-            return chartSeries(meta, period, points, 'tencent-kline');
+            return null;
         }
         if (meta.market === 'tw') {
             // cnYES TWS is the listed exchange; OTC mapping is not verified.
@@ -420,7 +445,11 @@ export async function fetchUnifiedChartSeries(rawSymbol: string, period: ChartPe
             } else points = points.slice(-bars);
             // Intraday baseline comes from a source quote, never the first minute.
             const quote = intraday ? (await fetchRealtimeQuotes([rawSymbol]))[rawSymbol] : null;
-            return chartSeries(meta, period, points, 'cnyes', quote?.prevClose, lastTimestamp === undefined ? undefined : new Date(lastTimestamp * 1000).toISOString(), quote);
+            // cnYES adjustment semantics are not verified for the consumed OHLC fields.
+            return chartSeries(meta, period, points, 'cnyes', {
+                adjustment: 'unknown', provenance: { requestedAdjustment: 'unknown', actualKey: 'data.c',
+                    sourceInterval: resolution === 'W' ? 'week' : resolution === 'M' ? 'month' : resolution === 'D' ? 'day' : 'minute' },
+            }, quote?.prevClose, lastTimestamp === undefined ? undefined : new Date(lastTimestamp * 1000).toISOString(), quote);
         }
         return null;
     } catch {

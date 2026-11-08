@@ -13,6 +13,7 @@ import { fetchRealtimeQuotes } from '@/lib/realtime-market';
 import { getMultiMarketNews } from '@/lib/actions/china-market.actions';
 import { identifyMarketAndCode } from '@/lib/market/instrument';
 import { optionalNumber as numeric } from '@/lib/market/contracts';
+import type { WatchlistEntry, WatchlistQuoteFields } from '@/lib/watchlist-observation';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 // Key pool: each free key has its own 60 req/min, so N keys = N x the quota. Rotated per request.
@@ -284,8 +285,13 @@ export async function getStockMetrics(symbol: string): Promise<number | null> {
     }
 }
 
-export async function getWatchlistData(symbols: string[]) {
-    if (!symbols || symbols.length === 0) return [];
+export async function getWatchlistData(items: string[]): Promise<(Partial<WatchlistEntry> & WatchlistQuoteFields & { symbol: string })[]>;
+export async function getWatchlistData(items: WatchlistEntry[]): Promise<(WatchlistEntry & WatchlistQuoteFields)[]>;
+export async function getWatchlistData(items: string[] | WatchlistEntry[]): Promise<(Partial<WatchlistEntry> & WatchlistQuoteFields & { symbol: string })[]> {
+    if (!items || items.length === 0) return [];
+    const entries: (Partial<WatchlistEntry> & Pick<WatchlistEntry, 'symbol' | 'reviewStatus'>)[] = items.map((item) =>
+        typeof item === 'string' ? { symbol: item, reviewStatus: 'watching' } : { ...item, reviewStatus: item.reviewStatus || 'watching' });
+    const symbols = entries.map((entry) => entry.symbol);
 
     // 1. Fetch real-time quotes across CN, HK, TW, and US
     const realtimeMap = await fetchRealtimeQuotes(symbols);
@@ -295,12 +301,19 @@ export async function getWatchlistData(symbols: string[]) {
     const saudi = saudiSymbols.length > 0 ? await getYahooDailyQuotes(saudiSymbols) : {};
 
     // 3. For any remaining US symbols, get Finnhub profile & quote
-    const promises = symbols.map(async (sym) => {
+    const promises = entries.map(async (entry) => {
+        const sym = entry.symbol;
         const rt = realtimeMap[sym];
         if (rt && rt.price > 0) {
             return {
+                ...entry,
                 symbol: sym,
                 price: rt.price,
+                priceBasis: rt.priceBasis,
+                source: rt.source,
+                asOf: rt.asOf,
+                fetchedAt: rt.fetchedAt,
+                previousClose: rt.prevClose,
                 change: rt.change,
                 changePercent: rt.changePercent,
                 currency: rt.currency,
@@ -314,8 +327,14 @@ export async function getWatchlistData(symbols: string[]) {
         const y = saudi[sym];
         if (y) {
             return {
+                ...entry,
                 symbol: sym,
                 price: y.price,
+                priceBasis: undefined,
+                source: 'Yahoo Finance',
+                asOf: undefined,
+                fetchedAt: undefined,
+                previousClose: y.prevClose,
                 change: y.change,
                 changePercent: y.changePercent,
                 currency: y.currency,
@@ -331,9 +350,19 @@ export async function getWatchlistData(symbols: string[]) {
             ? await Promise.all([getQuote(sym, LIVE_QUOTE_TTL), getCompanyProfile(sym)])
             : [null, null];
 
+        const actualPrice = numeric(quote?.c);
+        const actualTrade = actualPrice !== undefined && actualPrice > 0;
+        const sourceTime = numeric(quote?.t);
+        const quoteTime = sourceTime !== undefined && sourceTime > 0 ? new Date(sourceTime * 1000) : undefined;
         return {
+            ...entry,
             symbol: sym,
             price: quote?.c || 0,
+            priceBasis: actualTrade ? 'last-trade' as const : undefined,
+            source: actualTrade ? 'Finnhub' : undefined,
+            asOf: actualTrade && quoteTime && Number.isFinite(quoteTime.getTime()) ? quoteTime.toISOString() : undefined,
+            fetchedAt: undefined,
+            previousClose: numeric(quote?.pc),
             change: quote?.d || 0,
             changePercent: quote?.dp || 0,
             currency: profile?.currency || 'USD',

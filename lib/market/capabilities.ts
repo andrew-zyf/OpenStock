@@ -1,4 +1,5 @@
 import { identifyMarketAndCode } from './instrument';
+import { isInternationalSymbol } from '@/lib/utils';
 
 export type InstrumentCapabilities = {
     profile: boolean;
@@ -19,7 +20,8 @@ export function getInstrumentCapabilities(rawSymbol: string): InstrumentCapabili
     return {
         profile: equity && (mainland || meta.market === 'hk' || meta.exchangeId === 'TWSE'),
         financials: equity && (mainland || meta.market === 'hk' || meta.exchangeId === 'TWSE'),
-        alerts: traded && meta.market === 'us',
+        alerts: traded && (mainland || meta.market === 'hk' || meta.market === 'tw'
+            || (meta.market === 'us' && !isInternationalSymbol(meta.normalizedSymbol))),
         depth: traded && (mainland || meta.market === 'tw'),
         ticks: traded && (mainland || meta.market === 'tw' || meta.market === 'hk'),
         capitalFlow: traded && (mainland || meta.market === 'hk'),

@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import IndexPulse, { PulseSkeleton } from "@/components/IndexPulse";
 import DataFreshness from "@/components/DataFreshness";
 import MarketSwitcher from "@/components/MarketSwitcher";
+import MarketDiscoveryPanel from "@/components/MarketDiscoveryPanel";
+import { getMarketSession } from '@/lib/market/sessions';
 import CrossMarketBar from "@/components/CrossMarketBar";
 import ChinaMarketMacroBar from "@/components/ChinaMarketMacroBar";
 import SectorFlowPanel from "@/components/SectorFlowPanel";
@@ -30,7 +32,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     const { market: requested } = await searchParams;
     const saved = (await cookies()).get(MARKET_COOKIE)?.value;
     const market = getMarket(requested ?? saved ?? marketForCountry((await getSession())?.user.country));
-    const open = isMarketOpen(market);
+    const session = getMarketSession(market);
 
     return (
         <>
@@ -38,7 +40,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <div>
                     <h1 className="page-title">市场概览</h1>
                     <p className="page-sub">
-                        {market.name} · {open ? '常规交易时段' : '常规交易时段外'} · 行情时间以数据源为准
+                        {market.name} · 页面加载时：{session.label}{session.calendarStatus === 'unverified' ? '（年度交易日历未核验）' : ''} · 行情时间以数据源为准
                     </p>
                 </div>
             </header>
@@ -71,6 +73,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     <IndexPulse market={market} />
                 </Suspense>
             </section>
+
+            {(market.id === 'hk' || market.id === 'tw') && <MarketDiscoveryPanel key={market.id} market={market.id} />}
 
             {/* 核心资产与异动排行 (雪球式布局，全本地原生渲染，点击即看分时) */}
             <div key={market.id} className="flex flex-col gap-3">

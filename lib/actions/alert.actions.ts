@@ -4,42 +4,53 @@ import { connectToDatabase } from '@/database/mongoose';
 import { Alert } from '@/database/models/alert.model';
 import { revalidatePath } from 'next/cache';
 import { requireUserId } from '@/lib/better-auth/auth';
-import { hasFinnhubQuotes } from '@/lib/markets';
 import { alertsEnabled } from '@/lib/market-data';
+import { getInstrumentCapabilities } from '@/lib/market/capabilities';
+import { identifyMarketAndCode } from '@/lib/market/instrument';
+import { getAlertObservations } from '@/lib/alerts/quotes';
+import { MAX_ACTIVE_ALERTS, MAX_ALERT_DAYS } from '@/lib/alerts/evaluation';
 
-// A ticker (AAPL, BRK.B) or a Binance pair. Anything else, including markup, is rejected:
-// the symbol ends up in alert emails.
-const SYMBOL_PATTERN = /^(BINANCE:[A-Z0-9]{2,20}|[A-Z0-9][A-Z0-9.-]{0,14})$/;
+// Validate before normalization: symbols also appear in alert emails.
+const SYMBOL_PATTERN = /^(?:[A-Z]+:)?[A-Z0-9][A-Z0-9.-]{0,19}$/;
 const CONDITIONS = ['ABOVE', 'BELOW'];
-// The checker re-prices every active alert's symbol through Finnhub every 5 minutes
-const MAX_ACTIVE_ALERTS = 50;
 
 // Create a new alert. Server actions take untrusted input, so only validated fields are stored.
 export async function createAlert(params: {
     symbol: string;
     targetPrice: number;
     condition: 'ABOVE' | 'BELOW';
+    expiresInDays?: number;
 }) {
     const userId = await requireUserId();
     if (!alertsEnabled) throw new Error('价格预警功能需启用 OpenStock 预警服务 (OpenStock Cloud)');
-    const symbol = String(params.symbol ?? '').trim().toUpperCase();
-    const targetPrice = Number(params.targetPrice);
-    const condition = params.condition;
+    const inputSymbol = String(params?.symbol ?? '').trim().toUpperCase();
+    const targetPrice = params?.targetPrice;
+    const condition = params?.condition;
+    const expiresInDays = params?.expiresInDays === undefined ? MAX_ALERT_DAYS : params.expiresInDays;
 
-    if (!SYMBOL_PATTERN.test(symbol)) throw new Error('无效的股票代码 (Invalid symbol)');
+    if (!SYMBOL_PATTERN.test(inputSymbol)) throw new Error('无效的股票代码 (Invalid symbol)');
     if (!CONDITIONS.includes(condition)) throw new Error('无效的预警条件 (Invalid condition)');
-    // The alert checker prices symbols through Finnhub, whose free plan covers US stocks and crypto
-    if (!hasFinnhubQuotes(symbol)) throw new Error('价格预警目前支持美股与加密货币 (US stocks and crypto)');
-    if (!Number.isFinite(targetPrice) || targetPrice <= 0) throw new Error('目标价格必须为正数');
+    if (!getInstrumentCapabilities(inputSymbol).alerts) throw new Error('价格预警支持沪深、港股、台股和美股股票及 ETF');
+    const symbol = identifyMarketAndCode(inputSymbol).normalizedSymbol;
+    if (typeof targetPrice !== 'number' || !Number.isFinite(targetPrice) || targetPrice <= 0) throw new Error('目标价格必须为有限正数');
+    if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > MAX_ALERT_DAYS) {
+        throw new Error(`有效期必须为 1–${MAX_ALERT_DAYS} 天的整数`);
+    }
 
     await connectToDatabase();
-    if (await Alert.countDocuments({ userId, active: true }) >= MAX_ACTIVE_ALERTS) {
+    if (await Alert.countDocuments({ userId, active: true, triggered: false, expiresAt: { $gt: new Date() } }) >= MAX_ACTIVE_ALERTS) {
         throw new Error(`最多可创建 ${MAX_ACTIVE_ALERTS} 条生效预警 (up to ${MAX_ACTIVE_ALERTS} active alerts)`);
     }
 
     try {
-        // expiresAt and triggered come from the schema defaults, never from the caller
-        const newAlert = await Alert.create({ userId, symbol, targetPrice, condition, active: true });
+        // Only a fresh, verified source quote can seed the crossing. The client price is display-only.
+        const observations = await getAlertObservations([symbol]).catch(() => ({} as Awaited<ReturnType<typeof getAlertObservations>>));
+        const seed = observations[symbol];
+        const newAlert = await Alert.create({
+            userId, symbol, targetPrice, condition, active: true, triggered: false, mode: 'crossing',
+            expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000),
+            ...(seed ? { lastObservation: seed } : {}),
+        });
         revalidatePath('/watchlist');
         return JSON.parse(JSON.stringify(newAlert));
     } catch (error) {
